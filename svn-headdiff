@@ -1,0 +1,7 @@
+#!/bin/bash
+svn info 1>/dev/null 2>/dev/null || { echo "Current directory is not a subversion working copy"; exit 1; }
+
+localver=`svn info | grep Revision | cut -d ':' -f 2`
+svn log -r $localver:HEAD | tail -n +4 | head -n -1
+svn diff -r $localver:HEAD --summarize
+svn diff -r $localver:HEAD 

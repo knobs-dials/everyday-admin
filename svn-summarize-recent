@@ -1,0 +1,32 @@
+#!/bin//bash
+localver=`svn info | grep Revision | cut -d ':' -f 2`
+
+echo "============ Difference between HEAD and local code ============"
+svn log -r $localver:HEAD | tail -n +4 | head -n -1
+svn diff -r $localver:HEAD --summarize
+
+echo
+echo
+echo
+echo
+echo "========== Some changed before that ============"
+let counter=localver
+let stopat=$counter-15
+
+while [  $counter -gt $stopat ]; do
+  let minus1=$counter-1
+  echo
+  echo
+  echo "=== r${minus1} .. r${counter} ==="
+  #echo "= COMMIT MESSAGE ="
+  svn log -r $counter | tail -n +4 | head -n -1 | perl -0pe 's/\n+\Z/\n/' # that perl thing chomps multiple newlines at EOF into one
+  echo
+  echo "FILES INVOLVED"
+  svn diff -r $minus1:$counter --summarize
+
+  let counter=$minus1
+done
+
+
+
+
