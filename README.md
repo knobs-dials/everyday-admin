@@ -1,6 +1,6 @@
 
 
-# svn-summarize-recent
+## svn-summarize-recent
 
 A script with a few svn calls that shows the commit message and list of files involved for
 
@@ -10,16 +10,14 @@ A script with a few svn calls that shows the commit message and list of files in
 You'll want a passwordless auth for this, or it'll ask you a dozen times, once for each part.
 
 
-# svn-headdiff
+## svn-headdiff
 
 Shows the diff between repository HEAD and local code
 
 
 
 
-Bunch of system-inspection-or-tweaking-related tools.
-
-### straceD
+## straceD
 
 Periodically checks for processes that are in D (IO wait) state,
 straces them if they do so persistently.
@@ -32,7 +30,7 @@ because when disk contention happens it tends to create a choir of processes.
 
 
 
-### otherpeople
+## otherpeople
 
 Tries to summarize what various people are up to 
 * shows process names -- and filters out boring stuff, particularly for root
@@ -73,7 +71,7 @@ Tries to summarize what various people are up to
 
 
 
-### renicer
+## renicer
 
 Wrapper that eases renice+ionice.
 Reads from /proc, /etc/passwd.
@@ -122,7 +120,7 @@ Options:
 
 
 
-### lsof-interesting
+## lsof-interesting
 
 lsof with a grep that filters out most not-really-file stuff.
 Verrry simple.
@@ -133,8 +131,7 @@ Verrry simple.
 
 
 
-file-caseclash
-===
+## file-caseclash
 
 ```
     $ file-caseclash /data
@@ -200,8 +197,7 @@ Helper around chmod and chown that you can use recursively around directories.  
 
 
 
-file-recent
-===
+## file-recent
 
 Reports the most recently altered files under a path (via ctime/mtime).
 Helps find what you / other people / programs were recently working on.
@@ -220,11 +216,11 @@ Helps find what you / other people / programs were recently working on.
 ```
 
 
-file-stable
-===
+
+## file-stable
 
 When you want to handle files soon after they come in, but not _while_ still being written,
-this can be useful.
+a bit of backoff time is useful.
 
 Meant to feed things to xargs, in that it checks that files
 that match a given shellglob, 
@@ -240,8 +236,7 @@ I use this to compress incoming data on a server after it's fairly certain they 
 
 
 
-file-largest
-===
+## file-largest
 
 List the largest files under the given path(s).
 
@@ -261,8 +256,7 @@ List the largest files under the given path(s).
 
 
 
-file-cleanafter-rsync
-===
+## file-cleanafter-rsync
 
 If you break off rsync, it can leave behind temporary files, which are lonely (no file alongside)
 or stale (much older than the real file alongside).
@@ -271,8 +265,7 @@ This looks for them, checks that they're not recent, and reports and optionally 
 
 
 
-file-summarize-extensions
-===
+## file-summarize-extensions
 
 Reports total amount and size, per file extension under a path.
 
@@ -297,8 +290,7 @@ Helps answer questions like
 ```
 
 
-file-totalsize
-===
+## file-totalsize
 
 Takes a list of files on stdin, sums their size and count.
 
@@ -315,8 +307,7 @@ I mostly use this as a more targeted variant of file-summarize-extensions
 ```
 
 
-file-readin
-===
+## file-readin
 
 Reads a file. So that it's in the page cache.
 (note: you may care to know about the vmtouch utility)
@@ -328,8 +319,7 @@ Reads a file. So that it's in the page cache.
 ```
 
 
-file-estimate-homediruse
-===
+## file-estimate-homediruse
 
 As a sysadmin, it's nice to quickly see who your inactive users and your abusers are.
 
@@ -360,8 +350,7 @@ As a sysadmin, it's nice to quickly see who your inactive users and your abusers
 ```
 
 
-ssh-permission-check
-===
+## ssh-permission-check
 
 You know when ssh refuses to do something because it doesn't like your permissions?
 This suggests chowns to fix that   (and a few restrictive things, just because)
@@ -375,8 +364,8 @@ This suggests chowns to fix that   (and a few restrictive things, just because)
 
 
 
-TODO
-===
+## TODO
+
 Cleanup for all. 
 
 Option parsing for all.
