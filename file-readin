@@ -1,0 +1,216 @@
+#!/usr/bin/python
+''' Meant as a one-shot OS disk cache warmer, such as search indexes, data read in unusual seeky ways, and whatnot.
+    
+    Note that when these files are larger than the cache can take,
+    this is sort of pointless (particularly to do more than once).
+    
+    Shows speed (unless file was small, since those speeds are likely to be misleading).
+'''
+import sys,os,stat,time,getopt
+
+import helpers_format
+
+# The amount to read at once. 8MB seems fast and not very harsh on temporary memory use
+#chunksize = 8*1024*1024
+chunksize = 64*1024
+
+#We don't show read speed on small files
+# should probably be at least the disk's read size to be anywhere near accurate
+# a lowish multiple of 64k is probably okay
+min_report = 512*1024 
+
+global_total_bytes = 0
+
+
+def readin(fn, first_bytes=None, last_bytes=None, printstuff=1):
+    global global_total_bytes
+    try:
+        stob = os.stat(fn)
+        size = stob.st_size
+        mode = stob.st_mode
+        if not stat.S_ISREG(mode):
+            if printstuff:
+                sys.stdout.write("Not regular file: %s\n"%fn)
+                sys.stdout.flush()
+            return
+
+        if printstuff:
+            sys.stdout.write("Reading: %-50s"%fn)
+            #sys.stdout.flush()
+        
+        t = time.time()
+        f = open(fn)
+        readtotal = 0
+        while True:
+            if first_bytes!=None and first_bytes>0:
+                readnow=len( f.read(first_bytes) )
+            else:
+                readnow=len( f.read(chunksize) )                
+            if readnow==0: #EOF
+                break
+            readtotal+=readnow
+            
+            if first_bytes>0 and readtotal >= first_bytes:
+                #if printstuff:
+                #    print " - stopped after %d bytes"%readtotal
+                break
+        
+        if first_bytes>0 and last_bytes > 0: # we didn't just read all, and want to read from the end
+            f.seek( max(0,size - last_bytes) )
+            while True: 
+                readnow=len(f.read(chunksize))
+                if readnow==0: #EOF
+                    break
+            
+        global_total_bytes += readtotal
+
+        f.close()
+        dtime=time.time()-t
+        if readtotal>min_report:
+            extra=''
+            mbpersec = (readtotal/dtime)/(1024*1024)
+            if mbpersec>600:
+                extra='  (probably mostly cached in memory)'
+            elif mbpersec>150:
+                extra='  (probably partly cached in memory)'
+            elif mbpersec>80:
+                extra='  (probably came from disk, sole reader and not fragmented)'
+                extra=''
+            else:
+                extra='  (probably came from disk, not sole reader, or fragmented)'
+                extra=''
+            if printstuff:
+                print "  --  %d MB/s%s"%( mbpersec , extra )
+                sys.stdout.flush()
+        else:
+            if printstuff:
+                print '' # for its newline
+                #print '  --  (small)' 
+                #sys.stdout.flush()
+
+    except (OSError,):
+        pass
+
+
+def usage():
+    print "Reads data from files (and discards)"
+    print "Written as a user-controlled informed readahead thing ahead of real use, to exploit the OS's page cache"
+    print ""
+    print "     usage: readin [options] paths"
+    print ""
+    print "  If you do not use -r, you must specify filenames"
+    print ""
+    print "   -r          recursive. If you dont use this, specify all filenames you want read"
+    print "   -w          use filename whitelist (instead of reading everything), and add to that whitelist"
+    print "               (substring; will add globs later)"
+    print "   -o          only do stat(), don't read"
+    print "   -s <bytes>  how many bytes to read at the start of the file."
+    print "   -e <bytes>  how many bytes to read at the end of the file."
+    print "               If neither is specified, reads the whole file."
+    print "   -h          this help"
+    print ""
+    print " Example: readin -r -w .jpg -w .png ."
+    print " Example: readin -r -w .mp3 -s 2k -e 128 /data/MusicBulk"
+    print ""
+
+
+
+def main():
+    recursive  = False
+    only_first = None
+    stat_only = False
+    first_bytes = 0
+    last_bytes  = 0
+    whitelist = []
+
+    count_files = 0
+
+    def whitelist_match(s):
+        if len(whitelist)>0:
+            for ss in whitelist:
+                if ss in s:
+                    print "file %s matches %s"%(s,ss)
+                    return True
+            return False                
+        else: # no whitelist
+            return True
+                
+                
+    try:
+        optlist, args = getopt.getopt(sys.argv[1:], 'rs:he:w:o')
+        for o,v in optlist:
+            if o=='-r':
+                recursive   = True  
+            if o=='-w':
+                whitelist.append(v)
+            if o=='-s':
+                first_bytes = helpers_format.parse_kmg(v, kilo=1024)
+            if o=='-o':
+                stat_only = True
+            if o=='-e':
+                last_bytes  = helpers_format.parse_kmg(v, kilo=1024)
+            if o.startswith('-h'):
+                usage()
+                sys.exit(0)
+    
+    except Exception, e:
+        print e
+        print 
+        usage()
+        sys.exit(-1)
+
+
+    try:
+        start_time = time.time()
+        for fn in args:
+            fn = os.path.realpath(fn)
+            if not os.path.exists(fn):
+                print "Does not exist: %r"%fn
+            else:
+                if os.path.isfile(fn): # directly specified file?
+                    print fn
+                    if whitelist_match(fn):
+                        if stat_only:
+                            #print "Statting: %r"%fn
+                            os.stat(fn)
+                        else:
+                            readin(fn, first_bytes, last_bytes)
+                        count_files += 1
+
+                if os.path.isdir(fn): # directory
+                    if recursive:      # if -r,  then walk it:
+                        for curdir,dirs,files in os.walk(fn, followlinks=True):
+                            for filename in files:
+                                fullpath = os.path.join(curdir,filename)
+                                if whitelist_match(filename):
+                                    count_files += 1
+                                    if stat_only:
+                                        #print "Statting: %r"%filename
+                                        os.stat(fn)
+                                    else:
+                                        readin(fullpath, first_bytes, last_bytes)
+    except KeyboardInterrupt:
+        print "\n\n Interrupted"
+    took_time = time.time() - start_time
+
+
+    sec_digits = 1
+    if took_time<0.5: # fast
+        sec_digits = 3
+    if took_time<0.1: # near-instant, probably all in RAM
+        sec_digits = 4
+    
+    if took_time>0:
+        if not stat_only:
+            print "\nOverall speed:\n  %sB in %s  (~%sB/sec)"%(
+                helpers_format.kmg(global_total_bytes),
+                helpers_format.min_sec(took_time),
+                helpers_format.kmg(global_total_bytes/took_time),
+            )
+        print "  %sfiles / sec"%(
+            helpers_format.kmg(count_files / took_time, append=' '),
+        )
+
+
+if __name__=='__main__':
+    main()

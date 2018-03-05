@@ -1,0 +1,4 @@
+#!/bin/bash
+# will implicitly use the current user's top settings (particularly the column)
+[ "z$1z" = "zz" ] && (echo "need a string to look for"; exit)  #quit if there were no arguments
+top -d 1 -b -n 1 | sed -n -e '/PID/p' -e "/$1/p" | grep -v "\/$1\/" | grep -v topgrep | grep -v 'grep -v'

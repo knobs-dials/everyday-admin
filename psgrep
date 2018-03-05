@@ -1,0 +1,4 @@
+#!/bin/bash
+# Yes, this could be done more cleanly, e.g. via a scripting language. But it works.
+[ -z "$1" ] && exit  #quit if there were no arguments
+ps aux | sed -n -e '1 p' -e "/$1/p" | grep -v "\/$1\/" | grep -v psgrep | grep -v 'grep -v'

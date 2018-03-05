@@ -1,0 +1,485 @@
+#!/usr/bin/python
+'''
+     Get a basic idea of what other people are doing on a host
+
+'''
+
+import sys
+import os
+import subprocess
+import time
+import pwd
+
+
+
+def procs_via_ps( root_too=False):
+    ''' geared to report things that use CPU or memory '''
+    # TODO: force specific output from ps
+    p = subprocess.Popen("ps --no-header -eo uid,user,pid,%cpu,%mem,state,comm",shell=True, stdout=subprocess.PIPE)
+    out,_ = p.communicate()
+
+    d={}
+    user_and_procname_to_pids={}
+    pid_to_cpu   = {}
+    pid_to_mem   = {}
+    pid_to_state = {}
+
+    for line in out.splitlines():
+        ll = line.strip().split()
+        uid   = ll[0]
+        user  = ll[1]
+        pid   = ll[2]
+        pcpu  = ll[3]
+        pmem  = ll[4]
+        state = ll[5]    
+        cmd  = ' '.join(ll[6:])
+        if '<defunct>' in cmd:
+            cmd=cmd.replace('<defunct>','').rstrip()
+
+        up='%s//%s'%(uid,cmd)
+        if up not in user_and_procname_to_pids:
+            user_and_procname_to_pids[up]=[pid]
+        else:
+            user_and_procname_to_pids[up].append(pid)
+
+        pid_to_cpu[pid]=float(pcpu)
+        pid_to_mem[pid]=float(pmem)
+        pid_to_state[pid]=state
+
+        if uid=='0':
+            if not root_too:
+                continue
+        elif int(uid)<400: # TODO: need a better test
+            continue
+
+        if uid not in d:
+            d[uid]={pid:cmd}
+        else:
+            d[uid][pid]=cmd
+
+    if not root_too:
+        if 'root' in d: # ignore a bunch of system stuff
+            del d['root']
+
+    return d, user_and_procname_to_pids, pid_to_cpu, pid_to_mem, pid_to_state 
+
+
+def username_by_uid(uid):
+    return pwd.getpwuid(int(uid)).pw_name
+
+def dirs_via_lsof(cwd_only=True, pids=None):
+    ''' returns a dict, from PID to the list of directories it has open.
+
+         This only works completely with root rights
+
+         with pids=None it lists everything, which is slow.
+         Ideally, you figure out a list of PIDs you are interested in and hand those in.
+
+         CONSIDER: use something like -Fntf0 for more robustness
+    '''
+    lsof_DIR={} # pid -> opendirs
+    import subprocess
+
+    lsof_DIR={}
+
+    lsof_paths = ['/usr/sbin/lsof', '/usr/bin/lsof']
+    for option in lsof_paths:
+        if os.path.exists(option):
+            lsof_path = option
+            break
+
+    cmd = [lsof_path,
+           '-n', # no host lookup (often faster)
+           '-l', # no UID lookup 
+           '-w', # no warnings
+           ]
+    if pids!=None and len(pids)>0:
+        pidstr = ','.join(str(int(e))  for e in pids) # str(int()) both to ensure strings and for some safety
+        cmd.extend(['-p',pidstr])
+
+    t=time.time()
+    o=subprocess.Popen(cmd, stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    out,err = o.communicate()
+    t=time.time()-t
+    #print "Running lsof took %.3fsec"%t
+
+    for line in out.splitlines():
+        if 'DIR' in line:
+            if cwd_only:
+                if not ' cwd ' in line:
+                    continue
+            l= line.split()
+            # for DIR entries the list is name,pid,user, entrytype, ?, ?, ?, dir(+extra)
+            #['display.e', '32679', '521', 'cwd', 'DIR', '0,23', '4096', '310050833', '/data/beofiles-2/spanico/David', '(beofiles-2:/data/beofiles-2)']
+
+            dirv = ' '.join(l[8:9]) # and no more, because of the way NFS entries are printed
+            pidv = int(l[1])
+            #print pidv,dirv
+            if pidv not in lsof_DIR:
+                lsof_DIR[pidv]=set()
+            lsof_DIR[pidv].add(dirv)
+    return lsof_DIR
+
+
+
+
+#### 
+
+heavy_only = False
+if 'heavy' in sys.argv[0]:
+    heavy_only = True
+
+try:
+    import helpers_shellcolor as sc
+except ImportError:
+    sc=None
+
+
+if os.geteuid()!=0:
+    msg = "Note: To see the working directories of other users, run this with root rights\n"
+    if sc:
+        msg=sc.darkgray(msg)
+    sys.stderr.write(msg)
+
+
+cpu_thresh_percent = 1.0
+mem_thresh_percent = 1.0
+
+states={ 'X':0,  'Z':1, 
+         'T':2,  'S':2,  'R':3,
+         'S':4, # or 5?
+         'W':4, # or 5?
+         'D':5,
+}
+
+hide_if_lowresource=[
+    # don't list boring stuff unless it's doing something intersting:
+    #'bash','csh','ksh' # intentionally left in, for cwd printing
+    'sh', 'su', 
+    'tail','head','less','more','man','tee',
+    os.path.basename(sys.argv[0]), # this script
+    'portmap',
+    'mpirun',
+    'python',
+    'dnsmasq',
+    'smbd'
+    'ps', 'top', 'watch', 'vmstat','iostat',
+    'pulseaudio',
+   
+    'nautilus',
+    'chrome-sandbox',
+
+    'cat',
+    'ps',
+    'ssh-agent',     
+    'metacity',
+    
+    'other-people',
+    # Intentionally left in, they're somewhat informative of the type of user:
+    #'ssh',
+    #'sshd', 'tmux', 'screen',
+    #'mc',
+
+    # kernel stuff, if showing root
+    'md',
+]
+
+hide_if_lowresource_startswith = [
+    'dbus',
+    'gconf',
+    'dconf',
+    'gvfs',
+    'unity',
+    'ubuntu',
+    'polkit',
+    'indicator',
+    'notify-',
+    'gnome',
+    'update-',
+    'evolution',
+    'zeitgeist',
+    'telepathy',
+    'bluetooth',
+    'bamf',
+    'goa-',
+    'bzr-',
+    'nautilus',
+    'nm-',
+    'hud-',
+    'gdu-',
+    'geoclue',
+    'deja-',
+    'mission-',
+    'at-spi',
+    'gam_',
+    'upstart-',
+    'ibus-',
+    'kded',
+    'kdei',
+    'kdew',
+    'klau',
+    'kwall',
+    'knoti',
+    'window-stack',
+    'script-fu',
+    'xdg-',
+    'plymouth',
+    # maybe, maybe not?:
+    'debconf',
+    'oneconf-',
+    'metacity',
+    'logging: ',
+    'spl_',
+    
+    # system services, if showing root
+    'init',
+    'cron',
+    'getty',
+    'munin',
+    
+    # kernel stuff, if showing root
+    'systemd',
+    'udev',
+    'rcuob',
+    'rcuos',
+    'rcu_',
+
+    'dbu_evict',
+    
+    'kworker',
+    'khung',
+    'khuge',
+    'khubd',
+    'kblock',
+    'kworker',
+    'kaudit',
+    'khelper',
+    'kthreadd',
+    'kdevtmpfs',
+    'kthrotld',
+    'kintegrityd',
+
+    'kswapd',
+    'writeback',
+    
+    'cgmanager',
+    
+    'deferwq',
+    'ksoftirqd/',
+    'irqbalance',
+    'devfreq',
+    'migration/',
+
+    'scsi_',
+    'ata_',
+    'edac-poller',    
+    'hd-audio',
+    'acpid',
+    'charger_manager',
+    
+    'atievent',
+    'authatievent',
+    
+    'jbd',
+    'ext4-rsv-conver',
+    'fsnotify',
+    'xfsalloc',
+    'xfs_mru_cache',
+    'xfslogd',
+    'jfsCommit',
+    'jfsSync',
+    'jfsIO',
+    'ecryptfs',
+    'watchdog',
+    'ksmd',
+    'zvol',
+    'z_unmount',
+    'arc_',
+    'l2arc',
+    'spl_kmem_cache',
+    'spl_system_task',
+
+    'inetutils-',
+    
+    'bioset',
+    'netns',
+    
+    'crypto',
+    
+    'ttm_swap',
+
+    'winbindd',
+
+    'nmbd',
+    # note: '' here basically means 'everything'
+
+    'sudo',
+    'mount.ntfs',
+    ]
+
+
+
+
+def main():
+    # TODO: put root_to under a command line argument
+    root_too = 1
+    
+    procs_for_uid, user_and_procname_to_pids, pid_to_cpu, pid_to_mem, pid_to_state = procs_via_ps(root_too)
+    #print procs_for_uid
+    
+    if 0: # debug
+        import pprint
+        pprint.pprint( procs_for_uid )
+        pprint.pprint( pid_to_cpu )
+        pprint.pprint( pid_to_mem )
+        pprint.pprint( pid_to_state )
+        pprint.pprint( user_and_procname_to_pids )
+
+    for uid in sorted(procs_for_uid): # per user...
+        
+        user = username_by_uid(uid)
+        printed_user_yet = False
+
+        pl = list(procs_for_uid[uid].iteritems())
+        pl.sort(lambda a,b: cmp(a[1],b[1]))
+        cmdcount = {}
+        for pid,cmd in pl:
+            if cmd not in cmdcount:
+                cmdcount[cmd]  = 1
+            else:
+                cmdcount[cmd] += 1
+
+
+        if len(cmdcount)>0:
+            ccc = cmdcount.items()
+            ccc.sort(lambda a,b: cmp(b[1],a[1])) # descending by count
+            
+            for cmd,cnt in ccc:
+                paths       = set()
+                noprint     = False
+                total_cpu   = 0.
+                total_mem   = 0.
+                worst_state = 0
+                pids        = user_and_procname_to_pids['%s//%s'%(uid,cmd)]
+
+
+                # first figure out whether we want to run lsof at all
+                interesting_pids = []
+                for pid in pids:
+                    total_cpu+=pid_to_cpu[pid]
+                    total_mem+=pid_to_mem[pid]
+                    worst_state=max(worst_state, states[pid_to_state[pid]])
+                    if (cmd in ('bash','csh','ksh',)
+                        # show paths for shells, and for anything that seems to be using a bunch of resources
+                        or worst_state>=5
+                        or total_cpu>80
+                        or total_mem>20
+                        #or True
+                        ):
+                        interesting_pids.append(pid)
+                # Okay, we do...
+                if len(interesting_pids)>0:                
+                    def try_to_find_opendir(pid):
+                        pid=int(pid)
+                        if pid in lsof_DIR:
+                            return lsof_DIR[pid]
+                        else:
+                            return []                    
+                    #print "Running lsof for %s (pids %s)"%(cmd,','.join(pids))
+                    # Right now we run lsof once per command name, fetching for the PIDs we decided to show dirs for
+                    lsof_DIR = dirs_via_lsof(pids=interesting_pids)
+                    for pid in interesting_pids:
+                        for p in try_to_find_opendir(pid):
+                            paths.add(p)
+
+
+                if total_cpu < cpu_thresh_percent and total_mem < mem_thresh_percent: # TODO: better condition there
+                    if heavy_only:                 # unconditional?
+                        continue
+                    if cmd in hide_if_lowresource: # conditional on command?
+                        noprint=True
+                    for hsw in hide_if_lowresource_startswith:
+                        if cmd.startswith(hsw):
+                            noprint=True
+                    if noprint:
+                        continue # the 'for ... in ccc' loop, that is
+
+                ### Figure out how to print
+                highlight=False
+                if total_mem>5 or total_cpu>50:
+                    highlight|=True                    
+                if cnt>=3:
+                    highlight|=True
+
+                ps='  '
+                if cnt>1:
+                    ps+=' %3d * '%cnt
+                else:
+                    ps+='       '
+                ps+=" %-16s"%cmd
+
+                if highlight and sc!=None:
+                    ps=sc.white(ps)
+
+                if total_cpu>50:
+                    if sc:
+                        ps+=sc.yellow('  %4d%% CPU'%total_cpu)
+                    else:
+                        ps+='  %4d%%CPU'%total_cpu
+
+                if total_mem>50:
+                    if sc:
+                        ps+=sc.yellow('  %4d%%mem'%total_mem)
+                    else:
+                        ps+='  %4d%%mem'%total_mem
+
+
+                if worst_state>=5:
+                    if sc:
+                        ps+=sc.red('  waiting on IO  <--------')
+                    else:
+                        ps+='  waiting on IO  <--------'
+
+                for path in paths:
+                    if sc:
+                        ps+=sc.darkgray('\n           in %r '%path)
+                    else:
+                        ps+='\n          in %r '%path
+
+                ####
+                if not printed_user_yet:
+                    print
+                    print user
+                    #print "UID %s is %r"%(uid,user)
+                    printed_user_yet=True
+                print ps
+
+
+    if os.geteuid()==0: # root
+        print 
+        print 
+
+        if 0:
+            print
+            p=subprocess.Popen("/bin/netstat -plant | grep 'sshd:'", shell=True, stdout=subprocess.PIPE)
+            out,_ = p.communicate()
+            if len(out.strip())>0:
+                print "SSH network connections to us:"
+                print '    '+ '\n    '.join(out.splitlines())
+            print
+
+        if 0:
+            print
+            print "Logins's working directories:"
+            p=subprocess.Popen("lsof 2>/dev/null | grep bash | grep cwd", shell=True, stdout=subprocess.PIPE)
+            out,_ = p.communicate()
+            if len(out.strip())>0:
+                print '    '+ '\n    '.join(out.splitlines())
+
+
+
+if __name__=='__main__':
+    # TODO: add option parser so that use of lsof can be optional
+    main()
+
+

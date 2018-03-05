@@ -1,0 +1,280 @@
+#!/usr/bin/python
+
+'''
+Summarizes each user's homedir - used space, recent files.
+
+Written by Bart Alewijnse
+'''
+
+import os
+import datetime
+import time
+import stat
+import math
+
+
+
+def kmg(bytes,kilo=1000, append='',thresh=15,rstrip0=1, extradigits=0):
+    """ Readable size formatter
+        e.g. '%sB'%kmg(2342342324) = '2.3 GB'
+             kmg(3429873278462) == '3.1T'
+             kmg(342987327)     == '327M'
+             kmg(34298)         == '33K'
+        Decimal/SI kilos by default. Specify kilo=1024 if you want binary kilos.
+
+        Maybe use sfloat-like behaviour for the number?
+    """
+    ret = None
+    
+    mega = kilo*kilo
+    giga = mega*kilo
+    tera = giga*kilo
+    peta = tera*kilo
+
+    # Yes, can be abstracted now
+    if abs(bytes)>(0.80*peta):
+        showval = bytes/float(peta)
+        if showval<thresh:
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='P'
+
+    elif abs(bytes)>(0.80*tera):
+        showval = bytes/float(tera)
+        if showval<thresh: 
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='T'
+
+    elif abs(bytes)>(0.95*giga):
+        showval = bytes/float(giga)
+        if showval<thresh: # e.g. 1.3GB but 15GB
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='G'
+            
+    elif abs(bytes)>(0.9*mega):
+        showval = bytes/float(mega)
+        if showval<thresh:
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='M'
+    
+    elif abs(bytes)>(0.85*kilo):
+        showval = bytes/float(kilo)
+        if showval<thresh:
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='K'
+    else:
+        showval = bytes
+        showdigits=0
+
+    ret = ("%%.%df"%(showdigits))%showval
+        
+    if rstrip0:
+        if '.' in ret:
+            ret=ret.rstrip('0').rstrip('.')                   
+
+    ret+=append
+        
+    return ret
+
+
+def nicetimelength(sec, long=False, joinon=' ', parts=2):
+    """ Takes a relative amount of time (seconds as float/int, or a timedelta)
+        Returns a string describing that is human terms
+
+         e.g. nicetimelength(767)        == '12min 47sec',
+              nicetimelength(2615958475) == '82yr  11mo',
+    """
+    if type(sec) is datetime.timedelta:       
+       sec = sec.days*86400 + sec.seconds
+
+    vals = [
+        #('century','centuries','cent', 60.*60.*24.*365.*100. ),
+        ('year',   'years',    'yr',   60.*60.*24.*365.      ),
+        ('month',  'months',   'mo',   60.*60.*24.*30.6      ),
+        ('week',   'weeks',    'wk',   60.*60.*24.*7         ),
+        ('day',    'days',     'dy',   60.*60.*24.           ),
+        ('hour',   'hours',    'hr',   60.*60.               ),
+        ('minute', 'minutes',  'min',  60.                   ),
+        #('second', 'seconds',  'sec',  1.                    ),
+    ]
+    ret=[]
+    left = sec
+    roundme=False
+    if left>10:
+        roundme=True
+    for one,many,shorts,insec in vals:
+        if left>insec:
+            howmany = int(left/insec)
+            left -= howmany*insec
+            if long:
+                if howmany==1:
+                    ret.append( '1 %s'%(one) )
+                else:
+                    ret.append( '%d %s'%(howmany,many) )
+            else: # short form
+                ret.append('%2d%-3s'%(howmany,shorts))
+    if left>0.:
+        if roundme:
+            if long:
+                ret.append( '%d seconds'%(left) )
+            else:
+                ret.append( '%dsec'%(left) )
+        else:
+            if long:
+                ret.append( '%s seconds'%(sfloat(left,fixedwidth='')) )
+            else:
+                ret.append( '%ssec'%(sfloat(left,fixedwidth='', digits=2)) )
+                        
+    return joinon.join(ret[:parts])
+
+
+show_file_amt = 14
+quick_dirty = False
+whitelist_users=[]#'worker',]
+minsize = 10000
+
+minute   = 60.
+hour     = 60*minute
+day      = 24*hour
+week     = 7*day
+month    = 30.6*day
+year     = 365*day
+halfyear = year/2
+
+
+passwd=open('/etc/passwd')
+for line in passwd:
+    if ':' in line:
+        l=line.split(':')
+        
+        if (int(l[2])>500 and  #UIDs for real accounts are usually >=1000
+            len(l[5])>8 and 'home' in l[5]): # more checking for what seem like real users
+
+            # Looks real enough, start reporting this homedir
+
+            print 
+
+            username = l[0] 
+            print 'User %r'%username
+            if username in whitelist_users:
+                print '  is whitelisted'
+                continue
+
+            
+            ### The work:
+            
+            homedir = os.path.expanduser('~%s'%username).rstrip('/')
+            if not os.path.exists(homedir):
+                print '  INFO: homedir %s does not exist. Not a real user? Moved?'%homedir
+            else:
+                if not os.access(homedir, os.R_OK):
+                    print '  WARNING:  Could not read homedir %r -- are we running as root?'%homedir
+                    continue
+
+                showfiles=[]
+                filecount       = 0
+                errors, ignored = 0,0
+                ignored         = 0              
+                fsizeby         = 0
+                youngest        = None
+                #avgage   = 0.
+                #avgcount = 0
+                
+                for rt,ds,fs in os.walk(homedir):
+                    # ignore hidden directories
+                    if quick_dirty:
+                        dl=[]
+                        for e in ds:
+                            if e.startswith('.'):
+                                #print "[ %-12s ]  ignoring dot-dir %r"%(username,e)
+                                dl.append(e)
+                                ignored+=1
+                        for de in dl:
+                            ds.remove(de)
+
+                    for fn in fs:
+                        if quick_dirty:
+                            if fn.startswith('.'): # ignore hidden files (slightly more dangerous)
+                                #print '[ %-12s ]  ignoring dotfile %r'%(username,fn)
+                                ignored+=1
+                                continue
+
+                        try:
+                            fullpath = os.path.join(rt,fn)
+
+                            stob = os.stat(fullpath)
+                            mtime = stob.st_mtime
+                            size = stob.st_size
+                            fsizeby += size
+                            age_sec=time.time()-mtime
+                            if youngest==None:
+                                youngest = age_sec
+                            else:
+                                youngest = min(youngest,age_sec)
+                            # hidden files are likelier to come from skel and be old, and/or distort from everyday work (e.g. thumbnail cache)
+                            if [0]=='.' or '/.' in fullpath:
+                                continue
+                            #if ('/bin' in fullpath or '/lib' in fullpath or
+                            #    '.so' in fullpath or '.pyc' in fullpath): #software is likely to have old timestamps
+                            #    continue
+                            #if '.' in fn:
+                            #    if fn.rsplit('.',1)[1] in ('c','h','cpp','hpp','o','cxx','html'):
+                            #        continue
+                            # ...so don't count them in printed age, and don't show them.
+                            #avgage+=age_sec
+                            #avgcount+=1
+                            if stob.st_size > max(1,minsize): # don't report small files. Forces >=1 for the log below  (and who cares about empty files?)
+                                showfiles.append( (age_sec, fullpath, size) )
+
+                        except OSError:
+                            errors+=1
+
+                if ignored>0:
+                    print '  INFO: Ignored %s hidden files/dirs'%(ignored)
+                if errors>0:
+                    print '  WARNING: Could not check %d files'%(errors)
+
+                print '  INFO: Size:          %sB'%(kmg(fsizeby))
+                print '  INFO: Youngest file: %s'%nicetimelength(youngest)
+                #print '  INFO: Average age:   %s (keep in mind that software may have old timestamps)'%nicetimelength(avgage/avgcount)
+
+                #showfiles.sort(lambda a,b: cmp(a[0],b[0])) # age, ascending
+                def sorter(a,b):
+                    ' tries to bias towards things both large and recent (more likely to be interesting data files)'
+                    aa = min(1.0, a[0]/year )   # since we have a policy for a month (in theory), a year seems like a lot
+                    ab = min(1.0, b[0]/year ) 
+                    sa = 1. / math.log( a[2], 100000) # this is probably the easiest to tweak
+                    sb = 1. / math.log( b[2], 100000) # if you want to weigh size more or less
+                    return cmp(aa*sa,ab*sb)
+                showfiles.sort(  sorter  )
+                
+                printme = []
+                if len(showfiles)>0:
+                    shown_files=0 # 
+                    for age,ffn,size in showfiles:
+                        bn   = os.path.basename(ffn)
+                        reln = ffn[len(homedir)+1:]
+                        if bn[0]!='.' and reln[0]!='.' and '/.' not in reln: # hide hidden files (even though they counted)
+                            #printme.append( "    %-15s %5sB    %s"%(nicetimelength(age), kmg(size), reln) )
+                            printme.append( "    %-15s   %s"%(nicetimelength(age), reln) )
+                            shown_files+=1
+                            if shown_files>show_file_amt:
+                                break
+                if len(printme)>0:
+                    print '  Some of the larger and recent files: '
+                    for line in printme:
+                        print line
+                else:
+                    print '  No recently modified files. ' 
+
+
+print

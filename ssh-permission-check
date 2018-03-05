@@ -1,0 +1,47 @@
+#!/usr/bin/python
+# suggests chmod commands to fix up ssh-related files and dirs,
+#  so that it won't complain and fail to log in
+#  TODO: check in more detail what happens when you don't have permissions
+import pwd
+import os
+import stat
+
+suggestions   = 0
+checked_users = []
+for userdetails in pwd.getpwall():
+    username = userdetails[0]    
+    homedir  = userdetails[5]
+
+    sshdir = os.path.join( homedir, '.ssh' )
+    if os.path.exists(homedir) and not os.path.exists(sshdir): # basically a "is this a real user" check
+        if '/var' not in homedir and '/sbin' not in homedir and homedir!='/':
+            #print "User %s has homedir but no ~/.ssh directory"%username
+            continue
+    
+    if os.path.exists(sshdir): # basically a "is this a real user" check
+        #print "Checking %r"%username
+        checked_users.append(username)
+        dirmode = os.stat(sshdir).st_mode & 0777
+        if dirmode&022:        
+            print 'chmod %o %r   # currently: %o'%(dirmode&0755, sshdir, dirmode)
+            suggestions+=1
+            
+        for r,d,f in os.walk(sshdir):
+            for fn in f:
+                ffn = os.path.join(r, fn)
+                curmode  = os.stat(ffn).st_mode & 0777  # just permission bits from the mode bits
+                newmode  = curmode              
+                newmode &= 0755 # masks out 022 -- it's generally a bad idea for other people to write things
+                if fn in ('known_hosts',): # things others may read (only). TODO: think about this list
+                    newmode &= 0644
+                else: # most things only you may read
+                    newmode &= 0600
+                        
+                if newmode != curmode:
+                    print 'chmod %o %-60r   # currently: %o'%(newmode, ffn, curmode)
+                    suggestions+=1
+
+print "# Checked users: %s"%(', '.join(sorted(checked_users)))
+
+if suggestions==0:
+    print "# No permission suggestions, seems you're good."

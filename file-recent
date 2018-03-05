@@ -1,0 +1,395 @@
+#!/usr/bin/python
+
+'''
+Note that:
+ alias recent_files="find . -type f -printf '%TY-%Tm-%Td %TT %p\n' | sort"
+...does almost everything all this code does :)
+
+Written by Bart Alewijnse
+'''
+
+import sys
+import os
+import time
+import re
+import datetime
+from optparse import OptionParser
+
+
+def kmg(bytes,kilo=1000, append='',thresh=15,rstrip0=1):
+    """ Readable size formatter
+        e.g. '%sB'%kmg(2342342324) = '2.3 GB'
+             kmg(3429873278462) == '3.1T'
+             kmg(342987327)     == '327M'
+             kmg(34298)         == '33K'
+        Decimal/SI kilos by default. Specify kilo=1024 if you want binary kilos.
+
+        Maybe use sfloat-like behaviour for the number?
+    """
+    ret=None
+    
+    mega=kilo*kilo
+    giga=mega*kilo
+    tera=giga*kilo
+    peta=tera*kilo
+    
+    if abs(bytes)>(0.80*peta):
+        showval = bytes/float(peta)
+        if showval<thresh: 
+            ret= "%.1f"%(showval,)
+        else:
+            ret= "%.0f"%(showval,)
+        append+='P'
+
+    elif abs(bytes)>(0.80*tera):
+        showval = bytes/float(tera)
+        if showval<thresh: 
+            ret= "%.1f"%(showval,)
+        else:
+            ret= "%.0f"%(showval,)
+        append+='T'
+
+    elif abs(bytes)>(0.95*giga):
+        showval = bytes/float(giga)
+        if showval<thresh: # e.g. 1.3GB but 15GB
+            ret= "%.1f"%(showval,)
+        else:
+            ret= "%.0f"%(showval,)
+        append+='G'
+            
+    elif abs(bytes)>(0.9*mega):
+        showval = bytes/float(mega)
+        if showval<thresh:
+            ret= "%.1f"%(showval,)
+        else:
+            ret= "%.0f"%(showval,)
+        append+='M'
+    
+    elif abs(bytes)>(0.85*kilo):
+        showval = bytes/float(kilo)
+        if showval<thresh:
+            ret= "%.1f"%(showval,)
+        else:
+            ret= "%.0f"%(showval,)
+        append+='K'
+    else:
+        ret= "%d"%(bytes,)
+    if rstrip0:
+        if '.' in ret:
+            ret=ret.rstrip('0').rstrip('.')                   
+    ret+=append
+        
+    return ret
+
+def nicetimelength(sec, long=False, joinon=' ', parts=2):
+    """ Takes a relative amount of time (seconds as float/int, or a timedelta)
+        Returns a string describing that is human terms
+
+         e.g. nicetimelength(767)        == '12min 47sec',
+              nicetimelength(2615958475) == '82yr  11mo',
+    """
+    if type(sec) is datetime.timedelta:       
+       sec = sec.days*86400 + sec.seconds
+
+    vals = [
+        #('century','centuries','cent', 60.*60.*24.*365.*100. ),
+        ('year',   'years',    'yr',   60.*60.*24.*365.      ),
+        ('month',  'months',   'mo',   60.*60.*24.*30.6      ),
+        ('week',   'weeks',    'wk',   60.*60.*24.*7         ),
+        ('day',    'days',     'dy',   60.*60.*24.           ),
+        ('hour',   'hours',    'hr',   60.*60.               ),
+        ('minute', 'minutes',  'min',  60.                   ),
+        #('second', 'seconds',  'sec',  1.                    ),
+    ]
+    ret=[]
+    left = sec
+    roundme=False
+    if left>10:
+        roundme=True
+    for one,many,shorts,insec in vals:
+        if left>insec:
+            howmany = int(left/insec)
+            left -= howmany*insec
+            if long:
+                if howmany==1:
+                    ret.append( '1 %s'%(one) )
+                else:
+                    ret.append( '%d %s'%(howmany,many) )
+            else: # short form
+                ret.append('%2d%-3s'%(howmany,shorts))
+    if left>0.:
+        if roundme:
+            if long:
+                ret.append( '%d seconds'%(left) )
+            else:
+                ret.append( '%dsec'%(left) )
+        else:
+            if long:
+                ret.append( '%s seconds'%(sfloat(left,fixedwidth='')) )
+            else:
+                ret.append( '%ssec'%(sfloat(left,fixedwidth='', digits=2)) )
+                        
+    return joinon.join(ret[:parts])
+
+
+def walk_and_print(paths, recursive, what,amount=None, future=True, dirs=False, timespec_sec=None, use_color=True, sort=False):
+    results = []   # (time, line)
+    what_type = 'time' # or size 
+    try:
+        for path in paths:
+            for r, d, f in os.walk( path ):
+                
+                if dirs: # show dirs in results?
+                    f.extend(d)  # (cheating a bit)
+                
+                if not recursive:
+                    del( d[:] ) # clear that array (see os.walk docs)                  
+                
+                for fn in f:
+                    ffn = os.path.join(r,fn)
+                    mode, inode, device, numhardlinks, uid,gid, size, atime, mtime, ctime = os.lstat(ffn)
+
+                    if what=='mtime':
+                        what_val = time.time() - mtime
+                    elif what=='atime':
+                        what_val = time.time() - atime
+                    elif what=='ctime':
+                        what_val = time.time() - ctime
+                    elif what=='cmtime':
+                        what_val = time.time() - max(ctime,mtime)
+                    elif what=='cmatime':
+                        what_val = time.time() - max(ctime,mtime,atime)
+                    elif what=='size':
+                        what_val = size
+                        what_type = 'size'
+                    else:
+                        raise ValueError("Don't understand sorting by %r"%what)
+
+                    if what_val < 0  and not future:
+                        continue
+
+                    if what_type=='time':
+                        if what_val < timespec_sec:
+                            vst = nicetimelength(what_val)
+                            line=[]
+                            #if use_color:
+                            #    line.append(col)
+                            line.append('%16s'%vst)
+                            #if use_color:
+                            #    line.append( sc.RESET )
+                            line.append(':  %s\n'%(ffn,))
+                            if not sort:
+                                sys.stdout.write(''.join(line))
+                                sys.stdout.flush()
+                            else:
+                                results.append( (what_val, ''.join(line)) )
+                    elif what_type=='size':
+                        line=['%15sB: %s\n'%(kmg(what_val),ffn)]
+                        if not sort:
+                            sys.stdout.write(''.join(line))
+                            sys.stdout.flush()
+                        else:
+                            results.append
+                    else:
+                        raise ValueError("Don't know type %r"%what_type)
+                                
+                                                                                                
+            if sort:
+                results.sort(lambda a,b: cmp(b[0],a[0]))
+                
+                if amount:
+                    results=results[-int(amount):]
+                    
+                for dt, line in results:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+
+    except KeyboardInterrupt:
+        #if use_color:
+        #    print sc.RESET
+        print "\nStopping"
+        #if use_color:
+        #    print sc.RESET
+
+
+
+            
+def main():
+
+    ################################################## 
+
+    parser = OptionParser() # Has some options, but we're ignoring this
+
+    parser.add_option("-r", "--recurse", dest="recursive", default=True, action="store_true",
+                      help="Recurse into subdirectories")
+
+    parser.add_option("-R", "--no-recurse", dest="recursive", default=True, action="store_false",
+                      help="Recurse into subdirectories")
+
+    parser.add_option("-d", "--dirs",      dest="dirs",      default=False, action="store_true",
+                      help="include directories in results")
+
+    parser.add_option("-M", "--cmtime",    dest="cmtime",    default=False, action="store_true",
+                      help="use max(ctime,mtime) (default)")
+    parser.add_option("-A", "--cmatime",   dest="cmatime",   default=False, action="store_true",
+                      help="use max(ctime,mtime,atime)")
+    parser.add_option("-m", "--mtime",     dest="mtime",     default=False, action="store_true",
+                      help="use mtime")
+    parser.add_option("-a", "--atime",     dest="atime",     default=False, action="store_true",
+                      help="use atime")
+    parser.add_option("-c", "--ctime",     dest="ctime",     default=False, action="store_true",
+                      help="use ctime")
+
+    parser.add_option("-f", "--filesize",  dest="filesize",  default=False, action="store_true",
+                      help="use file size")
+
+        
+    parser.add_option("-p", "--colors",    dest="colors",    default=True, action="store_true",
+                      help="use pretty colors in output")
+    parser.add_option("-P", "--no-colors", dest="colors",    default=True, action="store_false",
+                      help="use no colors in output")
+
+    parser.add_option("-s", "--nosort",      dest="sort",      default=True, action="store_false",
+                      help="Don't sort output (by default it sorts by time - see options related to ctime, mtime, and atime). Implies not limiting by amount")
+
+    parser.add_option("-n", "--amount",    dest="amount",    default='30', action="store", type="string",
+                      help="show only the most recent x files  (implies --sort)  (default: 100)")
+    parser.add_option("-t", "--timespec",  dest="timespec",  default=False, action="store", type="string",
+                      help="Look only at files younger than some age, a value like 200day or 60min  (default: 100day)")
+
+    parser.add_option("-F", "--no-future",  dest="future",    default=True, action="store_false",
+                      help="don't display files with future dates")
+
+    parser.add_option("-w", "--watch",  dest="watch",  default=False, action="store_true", help="repeat every 10sec")
+
+
+
+    #if __name__ == '__main__':
+
+    (options, args) = parser.parse_args()
+    #
+
+    what = 'cmtime' # default
+    what_s = 'max(ctime,mtime)'
+    if options.filesize:
+        what = 'size'
+        what_s = 'size'
+    elif options.cmtime:
+        what = 'cmtime'
+        what_s = 'max(ctime,mtime)'
+    elif options.cmatime:
+        what = 'cmatime'
+        what_s = 'max(ctime,mtime,atime)'
+    elif options.mtime:
+        what = 'mtime'
+        what_s = what
+    elif options.atime:
+        what = 'atime'
+        what_s = what
+    elif options.ctime:
+        what = 'ctime'
+        what_s = what
+
+    recursive = False
+    if options.recursive:
+        recursive = True
+
+    sort = options.sort
+
+    if not options.sort: # that is, you used --nosort
+        options.amount = None
+
+    if options.amount: # if you used amount, default (back) to sorting
+        options.amount = int(options.amount)
+        sort = True
+
+    use_color = False
+    #if options.colors:
+    #    use_color = sc.supported()
+
+    dirs = False
+    if options.dirs:
+        dirs = True
+
+    if len(args) == 0:
+        rcwd = os.path.realpath('.')
+        sys.stderr.write('Defaulting to current directory (%r)\n'%rcwd)
+
+        paths = [rcwd]
+    else:
+        sys.stderr.write('Looking in %s\n'%(', '.join(repr(e) for e in args)))
+        paths = args
+
+    paths = list( os.path.abspath(item)  for item in paths)
+
+
+
+    in_seconds = False
+    if options.timespec:
+        howmuch = options.timespec.strip()
+        # TODO: use time parser I have somewhere, and/or merge this in.
+        if howmuch.endswith('d') or howmuch.endswith('day') or howmuch.endswith('days'): 
+            howmuch = howmuch.rstrip('days') # yeah, that's cheating a bit :)
+            days = float(howmuch)
+            in_seconds = 86400. * days
+            named_units = 'days'
+            sys.stderr.write( "  checking %s is in the last %d days\n"%(what_s,days) )
+            sys.stderr.flush()
+        elif howmuch.endswith('m') or howmuch.endswith('min') or howmuch.endswith('mins') or howmuch.endswith('minute') or howmuch.endswith('minutes'):
+            howmuch = howmuch.rstrip('minutes') # yeah, that's cheating a bit :)
+            mins = float(howmuch)
+            in_seconds = 60. * mins
+            sys.stderr.write( "  checking %s is in the last %d minutes\n"%(what_s,mins) )
+            sys.stderr.flush()
+        elif howmuch.endswith('s') or howmuch.endswith('sec') or howmuch.endswith('secs') or howmuch.endswith('second') or howmuch.endswith('seconds'):
+            howmuch = howmuch.rstrip('seconds') # yeah, that's cheating a bit :)
+            secs = float(howmuch)
+            in_seconds = secs
+            sys.stderr.write( "  checking %s is in the last %d secs"%(what_s,secs) )
+            sys.stderr.flush()
+        else:
+            sys.stderr.write( "\nDidn't recognize time units in %r\n"%howmuch )
+            sys.stderr.flush()
+            sys.exit(-1)
+
+    if not in_seconds:
+        sys.stderr.write('  including files where %s is in the last 100 days\n'%what_s)
+        in_seconds = 86400. * 100
+
+
+    if options.sort:
+        sys.stderr.write('  will sort results by age\n')
+
+    if options.amount:
+        sys.stderr.write('  and show the %d most recent files\n'%options.amount)
+
+    #sys.stderr.write('.\n')
+    sys.stderr.flush()
+
+    if options.watch:
+        while True:
+            print CLEARSCREEN
+            walk_and_print(paths,recursive,what,
+                           amount       = options.amount,
+                           future       = options.future,
+                           dirs         = dirs,
+                           timespec_sec = in_seconds,
+                           use_color    = use_color,
+                           sort         = options.sort,
+                           )
+            time.sleep(10)
+            #print '-'*60
+    else:    
+        walk_and_print(paths,recursive,what,
+                       amount=options.amount,
+                       future=options.future,
+                       dirs=dirs,
+                       timespec_sec = in_seconds,
+                       use_color    = use_color,
+                       sort         = options.sort,
+                       )
+
+
+        
+if __name__=='__main__':
+    main()

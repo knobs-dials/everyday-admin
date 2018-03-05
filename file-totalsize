@@ -1,0 +1,116 @@
+#!/usr/bin/python
+'''
+    Takes a list of filenames, sums their sizes 
+    Meant as a tool to stick on the end of find and grep
+'''
+
+import sys
+import os
+import optparse
+
+
+def kmg(bytes,kilo=1000, append='',thresh=15,rstrip0=1):
+    """ Readable size formatter
+        e.g. '%sB'%kmg(2342342324) = '2.3 GB'
+             kmg(3429873278462) == '3.1T'
+             kmg(342987327)     == '327M'
+             kmg(34298)         == '33K'
+        Decimal/SI kilos by default. Specify kilo=1024 if you want binary kilos.
+
+        Maybe use sfloat-like behaviour for the number?
+    """
+    ret=None
+    
+    mega=kilo*kilo
+    giga=mega*kilo
+    tera=giga*kilo
+    peta=tera*kilo
+    
+    if abs(bytes)>(0.80*peta):
+        showval = bytes/float(peta)
+        if showval<thresh: 
+            ret= "%.1f"%(showval,)
+        else:
+            ret= "%.0f"%(showval,)
+        append+='P'
+
+    elif abs(bytes)>(0.80*tera):
+        showval = bytes/float(tera)
+        if showval<thresh: 
+            ret= "%.1f"%(showval,)
+        else:
+            ret= "%.0f"%(showval,)
+        append+='T'
+
+    elif abs(bytes)>(0.95*giga):
+        showval = bytes/float(giga)
+        if showval<thresh: # e.g. 1.3GB but 15GB
+            ret= "%.1f"%(showval,)
+        else:
+            ret= "%.0f"%(showval,)
+        append+='G'
+            
+    elif abs(bytes)>(0.9*mega):
+        showval = bytes/float(mega)
+        if showval<thresh:
+            ret= "%.1f"%(showval,)
+        else:
+            ret= "%.0f"%(showval,)
+        append+='M'
+    
+    elif abs(bytes)>(0.85*kilo):
+        showval = bytes/float(kilo)
+        if showval<thresh:
+            ret= "%.1f"%(showval,)
+        else:
+            ret= "%.0f"%(showval,)
+        append+='K'
+    else:
+        ret= "%d"%(bytes,)
+    if rstrip0:
+        if '.' in ret:
+            ret=ret.rstrip('0').rstrip('.')                   
+    ret+=append
+        
+    return ret
+
+
+
+if __name__ == '__main__':
+
+    p=optparse.OptionParser()
+
+    p.add_option('-0','--null',      default=False,         action="store_true",  dest='null',
+                 help='Assume input is 0x00-delimited rather than whitespace-delimited')
+    
+    options,args = p.parse_args()
+
+    indata = sys.stdin.read()
+    if options.null:
+        inlist = indata.split('\x00')
+    else:
+        inlist = indata.split()
+    
+    errors = 0
+    successes = 0
+    size = 0
+    for infile in inlist:
+        if infile=='':
+            continue
+        try:
+            stob = os.stat(infile)
+            size += stob.st_size
+            successes += 1
+        except Exception, e:
+            # maybe separate out 'not found' from others?
+            #print 'ERROR',e,repr(infile)
+            errors += 1
+    print "%siB / %sB  (%d bytes)  in %d files"%( kmg(size, kilo=1024), 
+                                                  kmg(size, kilo=1000), 
+                                                  size, 
+                                                  successes),
+    if errors>0:
+        print " (%d access errors)"%errors
+    else:
+        print ""
+    

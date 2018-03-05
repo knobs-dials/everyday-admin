@@ -1,0 +1,148 @@
+#!/usr/bin/python
+# written by Bart Alewijnse
+'''
+
+Prints (once) the absolute filenames for files that have not changed size/ctime in a while
+  ...under a given directory
+  ...that match a given shellglob
+
+Meant to feed things to xargs, e.g.
+  file-stable '*-[0-9][0-9][0-9][0-9].mrc' . | xargs -t -n 1 -P 3 pigz -3 -k
+...to only compress certain files (that we know will compress).
+
+when you e.g. run on files that are actively being copied in, the interval can be low.
+If you don't know exactly how often files are written to (e.g. preallocated tomo stack), you may want it higher.
+
+
+TODO:
+- distinguish 'ignore because not file', so we can add a 'changed again' feature later
+- verbose option
+- 'quiet on stderr' option
+'''
+
+import time
+import glob
+import os
+import stat
+import sys
+import fnmatch
+
+try:
+    import setproctitle
+    setproctitle.setproctitle( os.path.basename(sys.argv[0]) )
+except ImportError:
+    pass
+
+
+
+interval_sec   =  10
+
+ffn_lastseen   = {} # filename -> stat_object
+ffn_ignore     = {}
+
+verbose = 1
+
+
+def printerr(s,newline=True):
+    if verbose:
+        if newline:
+            s += '\n'
+        sys.stderr.write(s)
+        sys.stderr.flush()
+
+
+
+def consider_stable(ffn):
+    ''' Given a filename and earlier info we build up, 
+        Return:
+          True, False, or None    (None is used as a 'not applicable' distinct from False)
+    '''
+    try:
+        stob = os.stat(ffn)   
+    except OSError, e : # assume broken symlink. Could actually check that
+        printerr('Ignoring %r (%r)'%(ffn,e)) 
+        ffn_ignore[ffn]=True
+        return None
+
+    mode = stob.st_mode
+    if stat.S_ISREG(mode): # only look at regular files (no directory structure)
+        if ffn in ffn_lastseen: 
+            try:
+                #print "  have seen before: %r"%ffn
+                last_stob = ffn_lastseen[ffn]
+                same_size = (last_stob.st_size == stob.st_size)
+                same_time = (last_stob.st_ctime == stob.st_ctime)
+                #print "  same size, time: %r %r"%(same_size, same_time)
+                if same_size and same_time:
+                    #print "  stable: %r"%ffn
+                    return True
+                else:
+                    #printerr("    changing: %r"%ffn)
+                    pass
+                    ffn_lastseen[ffn] = stob
+                    return False
+            except Exception, e:
+                printerr("    [ERROR] in check phase, ignoring")
+                printerr(e)
+                pass
+        else:
+            #printerr( "    New file: %r"%ffn)
+            ffn_lastseen[ffn] = stob
+
+        # implied else: new file, so don't act
+        #  still update what we saw:
+        ffn_lastseen[ffn] = stob
+
+    else: #elif stat.S_ISDIR(mode):
+        #printerr( "Ignoring non-file %r"%ffn )
+        ffn_ignore[ffn] = True
+        return None
+
+    return False
+        
+if len(sys.argv)<3:
+    print "Usage: %s glob directory [directory...]"%(os.path.basename(sys.argv[0]))
+    sys.exit()
+
+pat  = sys.argv[1]
+dirs = sys.argv[2:]
+
+fdirs = sorted( set( list(os.path.abspath(dirname)   for dirname in dirs ) ) )
+
+printerr( "Searching in %r"%fdirs )
+printerr( "Matching on %r"%pat )
+
+while True:
+    printerr( "===================== iteration =====================" )
+    now = time.time()
+
+    count_dir   = 0
+    count_file  = 0
+    count_stat  = 0
+
+    for dirname in fdirs:
+
+        for r,ds,fs in os.walk( dirname ):
+            count_dir += 1
+            if 0:
+                sp = r
+                if sp.startswith(dirname):
+                    sp = sp[len(dirname):].lstrip('/')
+                printerr( '  scanning %r'%sp )
+
+            for fn in fs:
+                count_file += 1
+                if fnmatch.fnmatch(fn, pat):
+                    ffn = os.path.join( r,fn )
+
+                    if ffn in ffn_ignore:
+                        continue
+
+                    count_stat+=1
+                    if consider_stable( ffn ):
+                        print ffn
+                        ffn_ignore[ffn] = True
+    
+    printerr( "%d listdirs, %d filenames seen, %d files statted"%(count_dir, count_file, count_stat) )
+    printerr( "Sleeping %d seconds"%interval_sec )
+    time.sleep( interval_sec )

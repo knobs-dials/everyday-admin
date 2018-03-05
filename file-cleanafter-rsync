@@ -1,0 +1,195 @@
+#!/usr/bin/python
+import os
+import sys
+import stat
+import re
+import time
+import datetime
+
+hour = 60*60
+day  = hour*24
+
+def nicetimelength(sec, long=False, joinon=' ', parts=2):
+    """ Takes a relative amount of time (seconds as float/int, or a timedelta)
+        Returns a string describing that is human terms
+
+         e.g. nicetimelength(767)        == '12min 47sec',
+              nicetimelength(2615958475) == '82yr  11mo',
+    """
+    if type(sec) is datetime.timedelta:       
+       sec = sec.days*86400 + sec.seconds
+
+    vals = [
+        #('century','centuries','cent', 60.*60.*24.*365.*100. ),
+        ('year',   'years',    'yr',   60.*60.*24.*365.      ),
+        ('month',  'months',   'mo',   60.*60.*24.*30.6      ),
+        ('week',   'weeks',    'wk',   60.*60.*24.*7         ),
+        ('day',    'days',     'dy',   60.*60.*24.           ),
+        ('hour',   'hours',    'hr',   60.*60.               ),
+        ('minute', 'minutes',  'min',  60.                   ),
+        #('second', 'seconds',  'sec',  1.                    ),
+    ]
+    ret=[]
+    left = sec
+    roundme=False
+    if left>10:
+        roundme=True
+    for one,many,shorts,insec in vals:
+        if left>insec:
+            howmany = int(left/insec)
+            left -= howmany*insec
+            if long:
+                if howmany==1:
+                    ret.append( '1 %s'%(one) )
+                else:
+                    ret.append( '%d %s'%(howmany,many) )
+            else: # short form
+                ret.append('%2d%-3s'%(howmany,shorts))
+    if left>0.:
+        if roundme:
+            if long:
+                ret.append( '%d seconds'%(left) )
+            else:
+                ret.append( '%dsec'%(left) )
+        else:
+            if long:
+                ret.append( '%s seconds'%(sfloat(left,fixedwidth='')) )
+            else:
+                ret.append( '%ssec'%(sfloat(left,fixedwidth='', digits=2)) )
+                        
+    return joinon.join(ret[:parts])
+
+
+
+
+def check_path_recursively(path, delete_stale=False, delete_lonely=False, verbose=False, minage_sec=day):
+    count_stale  = 0
+    count_lonely = 0
+    r=''
+    for root,_,files in os.walk( path ):
+        if verbose:
+            fc=0
+            print '  ',root,
+        for bfn in files:
+            afn = os.path.join(root,bfn)
+            if verbose:
+                fc+=1
+                if fc%250==0:
+                    sys.stdout.write('.')
+                    sys.stdout.flush()
+           
+            if bfn.startswith('.'):
+                if re.match('[.][0-9A-Za-z]{6}', bfn[-7:]) and len(bfn)>7: # len check avoids dotfiles, like .bashrc :)
+                    realbfn = bfn[1:-7]
+                    realafn = os.path.join(root,bfn[1:-7])
+
+                    if realbfn in files:
+                        st = os.stat(realafn)
+                        age = time.time()-st.st_mtime
+                        if r!=root:
+                            r=root
+                            print "\nIn %r"%r
+                        if age > minage_sec:
+                            print "\n  %r\n      ...seems like a stale (age=%s) rsync tempfile of...\n  %r"%(afn,nicetimelength(age),realbfn)
+                            count_stale+=1
+                            if delete_stale:                                
+                                print "  DELETING %r"%afn
+                                os.unlink(afn)
+                        else:
+                            print "\n  %r is a recent tempfile (age=%s), may be a current copy, leaving alone..."%(afn,nicetimelength(age))
+
+                    else:
+                        st = os.stat(afn)
+                        age = time.time()-st.st_mtime
+                        if age > minage_sec:
+                            if r!=root:
+                                r=root
+                                print "\nIn %r"%r
+                            print "\n  %r seems to be a lonely rsync tempfile (age=%s)"%(afn,nicetimelength(age))
+                            count_lonely+=1
+                            if delete_lonely:
+                                print "  DELETING %r"%afn
+                                os.unlink(afn)                
+    #if verbose:
+    print "  delete count: %d"%(count_stale+count_lonely)
+
+            
+                                
+
+
+def main():
+    import optparse
+    p=optparse.OptionParser()
+
+    #print "When you break off rsync, it can leave behind hidden temporary files."
+    #print "This script looks for those files (.filename.ahskld) and can delete them."
+
+    p.add_option('-d','--delete-stale-and-lonely',  default=False,   action="store_true", dest='both',
+                 help='Combination of --delete-state, --delete-lonely (see its warning).')
+    p.add_option('-s','--delete-stale',  default=False,   action="store_true", dest='stale',
+                 help='Delete stale temporary files  (considerably older than real file next to it)')
+    p.add_option('-l','--delete-lonely',  default=False,   action="store_true", dest='lonely',
+                 help='Delete lonely temporary files (no real file alongside) WARNING: this will also match things that have a six-character extension. Not common, but always check whether it makes sense.')
+
+    p.add_option('-n','--report-only',  default=False,   action="store_true", dest='report',
+                 help='Report only (note: without -s, -l, or -d, this is the default. Meant as dry-run argument, this cancels delete arguments)')
+
+    p.add_option('-v','--verbose',  default=False,   action="store_true", dest='verbose',
+                 help='Shows how far we are, directorywise')
+
+    p.add_option('-a','--minage',  default="1440.0",   action="store", dest='minage',
+                 help='Minimum age before we even consider deleting (lonely too), in minutes. Defaults to 1440 (a day), minimum is 1')
+
+    options,args = p.parse_args()
+
+    # Yes, this is redundant, written out for readability
+    if options.report: # acts as dry run if specified
+        delete_stale  = False
+        delete_lonely = False
+    else:
+        delete_stale  = False
+        delete_lonely = False
+        if options.both:
+            delete_stale  = True
+            delete_lonely = True
+        if options.stale:
+            delete_lonely  = True
+        if options.stale:
+            delete_lonely  = True
+
+    verbose       = options.verbose
+
+    fa = float(options.minage)
+    if fa < 1.0:
+        print "Minimum age should be at least a minute"
+        sys.exit(-1)
+    minage_sec = 60.0 * fa
+
+
+    #print options
+    #print `delete_stale, delete_lonely, verbose, minage_sec `
+    #sys.exit(1)
+
+    if len(args)==0:
+        print ''
+        print "ERROR: Please supply a path (refusing to blindly assume current directory)"
+        print ''
+        print "-"*20
+        print ''
+
+    else:
+        for path in args:
+            path = os.path.abspath(path)
+
+            print 'Checking under ',path
+            
+            check_path_recursively(path,
+                                   delete_stale=delete_stale,
+                                   delete_lonely=delete_lonely,
+                                   verbose=verbose, 
+                                   minage_sec=minage_sec 
+                                  )
+
+
+if __name__=='__main__':
+    main()

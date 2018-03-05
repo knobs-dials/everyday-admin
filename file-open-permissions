@@ -1,0 +1,471 @@
+#!/usr/bin/python
+''' Functionally, a combination of a few chowns and chmods.
+
+    What it does by default is what I wrote this for originally:
+    easing access to data shared via groups, where I would need something like:
+      find . -type d -print0 | xargs -0 chown chmod ug+rwx
+      find . -type d -print0 | xargs -0 chown chmod o+rx
+      find . -type f -print0 | xargs -0 chown chmod ug+rw
+      find . -type f -print0 | xargs -0 chown chmod o+r
+      chmod user:group -R .
+
+          
+    In words:
+    - group permissions:
+      chmod g+rx  on directories
+      chmod g+r   on files
+     
+    - optionally also gives it to other/world
+      chmod o+rx on dirs
+      chmod o+r on files
+     
+    - chown to a given group name (if it exists)
+     
+    - optional: o-w   (TODO)
+
+    TODO: 
+    - think about symlinks
+
+Written by Bart Alewijnse
+'''
+
+import os
+import stat
+import sys
+import pwd
+import grp
+import platform
+import optparse
+
+
+all_dir = {}
+all_file = {}
+changed_dir = {}
+changed_file = {}
+problems = {}
+
+
+_gid_to_name = {}
+_uid_to_name = {}
+
+def gid_to_name(gid):
+    if gid in _gid_to_name:
+        return _gid_to_name[gid]
+    else:
+        try:
+            gob = grp.getgrgid(gid)
+            gname = gob.gr_name
+            _gid_to_name[gid] = gname
+            return gname
+        except KeyError:
+            return None
+
+def uid_to_name(uid):
+    if uid in _uid_to_name:
+        return _uid_to_name[uid]
+    else:
+        try:
+            uob = pwd.getpwuid(uid)
+            uname = uob.pw_name
+            _uid_to_name[uid] = uname
+            return uname
+        except KeyError:
+            return None
+        
+
+
+def mode_minusstyle(mode):
+    ''' takes a file mode bits (probably from stat),
+        returns drwx------ style representation.
+    '''
+    ret=['-', '-','-','-', '-','-','-', '-','-','-']
+    if mode&stat.S_IFREG: pass
+    elif mode&stat.S_IFDIR: ret[0]='d'
+    elif mode&stat.S_IFIFO: ret[0]='p'
+    elif mode&stat.S_IFCHR: ret[0]='c'
+    elif mode&stat.S_IFBLK: ret[0]='b'
+    elif mode&stat.S_IFLNK: ret[0]='l'
+    elif mode&stat.S_IFSOCK: ret[0]='s'
+ 
+    if mode&stat.S_IRUSR: ret[1]='r'
+    if mode&stat.S_IWUSR: ret[2]='w'
+    if mode&stat.S_IXUSR: ret[3]='x'
+    if mode&stat.S_IRGRP: ret[4]='r'
+    if mode&stat.S_IWGRP: ret[5]='w'
+    if mode&stat.S_IXGRP: ret[6]='x'
+    if mode&stat.S_IROTH: ret[7]='r'
+    if mode&stat.S_IWOTH: ret[8]='w'
+    if mode&stat.S_IXOTH: ret[9]='x'
+
+    if mode&stat.S_ISUID:
+        if ret[3]=='x':
+            ret[3]='s'
+        else:
+            ret[3]='S'
+        
+    if mode&stat.S_ISGID:
+        if ret[6]=='x':
+            ret[6]='s'
+        else:
+            ret[6]='S'
+
+    if mode&stat.S_ISVTX:
+        if ret[9]=='x':
+            ret[9]='t'
+        else:
+            ret[9]='T'
+
+    return ''.join(ret)
+
+
+
+        
+def parse_spec(s, isdir):
+    ''' Takes a specification of how to change permission bits,
+        a length-9 string consisting of 
+          +  add
+          d  add if directory
+          -  remove
+          =  don't change
+        
+        The second argument is whether we are handling a directory or not, which matters when you use d.
+        
+        Returns two bitmasks: 
+        - One to add bits (via bitwise OR)
+        - One to remove bits (via bitwise AND)
+        You need to do both to apply all the changes you want to an existing mode.
+        
+        e.g.
+         parse_spec("++d+-d+-d", False)  == (420, 420)   # 0644
+         parse_spec("++d+-d+-d", True)   == (493, 493)   # 0755
+    '''
+    print 'parse_spec(%r)'%s
+    if len(s)!=9:
+        raise ValueError('Expected a string of 9 characters (uuugggooo)')
+
+    bits = (stat.S_IRUSR, stat.S_IWUSR, stat.S_IXUSR,
+            stat.S_IRGRP, stat.S_IWGRP, stat.S_IXGRP,
+            stat.S_IROTH, stat.S_IWOTH, stat.S_IXOTH)
+    
+    # start with 'add nothing' and 'remove nothing'
+    ormask, andmask  = 0, 511
+    for i in range(9):
+        op = s[i]
+        if op=='+':
+            ormask |= bits[i] 
+        elif op=='d':
+            if isdir:
+                ormask  |= bits[i] 
+            else:
+                andmask ^= bits[i] 
+        elif op=='-':
+            andmask ^= bits[i]
+        elif op=='=':
+            pass # do nothing
+        else:
+            raise ValueError('Did not understand pattern character %r'%op)
+    return ormask,andmask
+
+
+def main():
+    global all_dir, all_file, changed_dir, changed_file, problems
+
+    p = optparse.OptionParser()
+    p.add_option("-n", "--noother",  dest="noother",  default=False,  action="store_true", help="Don't also open up world ('other') permissions")
+    p.add_option("-d", "--dry-run",  dest="dryrun",   default=False, action="store_true", help="Only report what we would change, but don't do it.")
+    p.add_option("-q", "--quiet",    dest="quiet",    default=False, action="store_true", help="Don't mention every change we do")
+    p.add_option("-v", "--verbose",  dest="verbose",  default=False, action="store_true", help="Be a little more verbose")
+    p.add_option("-g", "--group",    dest="group",  default=None,  help="Change ownership to group name (default is not to change)")        
+    p.add_option("-u", "--user",     dest="user",   default=None,  help="Change ownership to user name (default is not to change)")
+    p.usage = """ Usage: %s [options]
+
+    """%os.path.basename(sys.argv[0])
+    options, args = p.parse_args()  
+
+    noother = options.noother
+
+    # See of there is a GID to change to on here
+    chosen_gid = None
+    if options.group != None:
+        try:
+            chosen_grp = grp.getgrnam(options.group)
+            if options.verbose:
+                print "Group %r exists (GID %r)\n"%(options.group, chosen_grp.gr_gid)
+            chosen_gid = chosen_grp.gr_gid
+        except KeyError:
+            pass
+
+    # See of there is a UID to change to on here
+    chosen_uid = None
+    if options.user != None:
+        try:
+            chosen_user = pwd.getpwnam(options.user)
+            if options.verbose:
+                print "User %r exists (UID %r)\n"%(options.user, chosen_user.pw_uid)
+            chosen_uid = chosen_user.pw_uid
+        except KeyError:
+            pass
+
+        
+    if len(args)>0:        
+        dirs=args
+        print "Working on given directories"
+    else:
+        print "No arguments given"
+        sys.exit(-1)
+        
+    if options.verbose:
+        print "Directories to check:\n  %s"%',\n  '.join(repr(e) for e in dirs)
+        print 
+
+
+    ###
+    done={}
+    tcnt,fcnt,dcnt=0,0,0
+    for dirname in dirs:
+        dirname = os.path.realpath(dirname)
+        
+        print
+        print "Working on %r"%dirname
+        for r,ds,fs in os.walk( dirname ):
+
+            # will report at somewhat arbitrary times
+            if options.verbose:
+                if tcnt>25000:
+                    import datetime
+                    print "%s  checked %s files, %s dirs"%(datetime.datetime.now().strftime('%H:%M(:%S)'), fcnt,dcnt)
+                    tcnt=0
+
+            for dfn in ds:
+                dcnt+=1
+                tcnt+=1
+                dir_fullpath = os.path.join(r,dfn)
+
+                all_dir[dir_fullpath]=True
+
+                if dir_fullpath in done:
+                    print "Already changed %r, skipping"%dir_fullpath
+                    continue
+                done[dir_fullpath]=True
+
+                try:
+                    stob = os.stat(dir_fullpath)
+                except OSError, e: 
+                    #raise
+                    # probably a symlink to something that doesn't exist.
+                    print "Problem, skipping %s"%dir_fullpath
+                    problems[dir_fullpath]=True
+                    if e.errno==2 and os.path.islink(dir_fullpath):
+                        print "  ...because it's a broken symlink"
+                        continue
+                    else:
+                        #if options.verbose:
+                        print '  ',e
+                        continue
+                
+                oldmode = stob.st_mode                
+                newmode = oldmode
+                newmode |= stat.S_IRUSR # these two ought to be
+                newmode |= stat.S_IXUSR # redundant
+                newmode |= stat.S_IWUSR # 
+                newmode |= stat.S_IRGRP # group read
+                newmode |= stat.S_IWGRP # group write
+                newmode |= stat.S_IXGRP # group execute
+                if not noother:
+                    newmode |= stat.S_IROTH # other read
+                    newmode |= stat.S_IXOTH # other execute
+                
+                if oldmode==newmode:
+                    pass
+                    #if options.verbose: # maybe a >=2 instead
+                    #    print "No change necessary (%s)   on dir  %s"%(mode_minusstyle(oldmode),dir_fullpath)
+                else:
+                    if not options.quiet:
+                        if options.dryrun:
+                            print 'would',
+                        print 'change permission from %s to %s  on dir %s'%(
+                            mode_minusstyle(oldmode),
+                            mode_minusstyle(newmode),dir_fullpath) 
+                    try:
+                        if not options.dryrun:
+                            os.chmod(dir_fullpath, newmode)
+                            changed_dir[dir_fullpath]=True
+                    except OSError: 
+                        print "ERROR: Couldn't change mode. Skipping..."
+
+
+                if chosen_gid != None:
+                    if stob.st_gid != chosen_gid:
+                        if not options.quiet:
+                            if options.dryrun:
+                                print 'would',
+                            print "change owning group from %s (%s) to %s (%s) on dir %s"%(stob.st_gid, gid_to_name(stob.st_gid),
+                                                                                           chosen_gid, gid_to_name(chosen_gid),
+                                                                                           dir_fullpath)
+                        try:
+                            if not options.dryrun:
+                                os.chown(dir_fullpath, -1, chosen_gid) # -1 means don't change UID
+                                changed_dir[dir_fullpath]=True
+                        except OSError: 
+                            print "ERROR: Couldn't change group. Skipping..."
+                            
+                if chosen_uid != None:
+                    if stob.st_uid != chosen_uid:
+                        if not options.quiet:
+                            if options.dryrun:
+                                print 'would',
+                            print "change owning user from %s (%s) to %s (%s) on dir %s"%(stob.st_uid, uid_to_name(stob.st_uid),
+                                                                                           chosen_uid, uid_to_name(chosen_uid),
+                                                                                           dir_fullpath)
+                        try:
+                            if not options.dryrun:
+                                os.chown(dir_fullpath, chosen_uid, -1) # -1 means don't change GID. TODO: merge case with the above
+                                changed_dir[dir_fullpath]=True # TODO: check that changed_* logic still makes sense.
+                        except OSError: 
+                            print "ERROR: Couldn't change owner. Skipping..."
+                            
+
+
+
+            for fn in fs:
+                tcnt+=1
+                fcnt+=1
+                file_fullpath = os.path.join(r,fn)      
+
+                all_file[file_fullpath]=True
+
+
+                if file_fullpath in done:
+                    if options.verbose:
+                        print "Already changed %r, skipping"%file_fullpath
+                    continue
+                done[file_fullpath]=True
+                
+                try:
+                    stob = os.stat(file_fullpath)
+                except OSError, e: 
+                    # probably a symlink to something that doesn't exist.
+                    print "Problem, skipping %s"%file_fullpath
+                    problems[file_fullpath]=True
+                    if e.errno==2 and os.path.islink(dir_fullpath):
+                        print "  ...because it's a broken symlink"
+                    else:
+                        #if options.verbose:
+                        print '  ',e
+                        continue
+
+                oldmode = stob.st_mode                
+                newmode = oldmode
+                newmode |= stat.S_IRUSR #
+                newmode |= stat.S_IWUSR #
+                newmode |= stat.S_IRGRP # group read
+                newmode |= stat.S_IWGRP # group write
+                if not noother:
+                    newmode |= stat.S_IROTH # other read
+                
+                if oldmode==newmode:
+                    pass
+                    #print "No change necessary (%s)   on file %s"%(mode_minusstyle(oldmode),file_fullpath)
+                else:
+                    if not options.quiet:
+                        if options.dryrun:
+                            print 'would',
+                        print 'change from %s to %s  on file %s'%(mode_minusstyle(oldmode),
+                                                                  mode_minusstyle(newmode),file_fullpath) 
+                    try:
+                        if not options.dryrun:
+                            os.chmod(file_fullpath, newmode)
+                            changed_file[file_fullpath]=True
+                    except OSError: 
+                       print "ERROR: Couldn't change mode. Skipping..."
+
+
+                if chosen_gid!=None:
+                    if stob.st_gid!=chosen_gid:
+                        if not options.quiet:
+                            if options.dryrun:
+                                print 'would',
+                            print "change owning group from %s (%s) to %s (%s) on file %s"%(stob.st_gid, gid_to_name(stob.st_gid),
+                                                                                            chosen_gid, gid_to_name(chosen_gid),
+                                                                                            file_fullpath)
+                        try:
+                            if not options.dryrun:
+                                os.chown(file_fullpath, -1, chosen_gid) # -1 means don't change UID
+                                changed_file[file_fullpath]=True
+                        except OSError: 
+                            print "ERROR: Couldn't change owner. Skipping..."
+
+
+                if chosen_uid!=None:
+                    if stob.st_uid!=chosen_uid:
+                        if not options.quiet:
+                            if options.dryrun:
+                                print 'would',
+                            print "change owning user from %s (%s) to %s (%s) on file %s"%(stob.st_uid, uid_to_name(stob.st_uid),
+                                                                                            chosen_uid, uid_to_name(chosen_uid),
+                                                                                            file_fullpath)
+                        try:
+                            if not options.dryrun:
+                                os.chown(file_fullpath, chosen_uid, -1) # -1 means don't change GID
+                                changed_file[file_fullpath]=True
+                        except OSError: 
+                            print "ERROR: Couldn't change owner. Skipping..."
+
+
+
+                            
+
+
+if __name__=='__main__':
+    if 0:
+        for testspec in ('+-d=+-d=+',):
+            for isdir in (0,1):
+                om,am = parse_spec(testspec, isdir)
+                for testval in (0,511):
+                    altered = (testval|om)&am
+
+                    #print '%o --> %o'%(testval, altered)
+
+                    print '%s  [%s isdir:%d]  %s'%(
+                        mode_minusstyle(testval), 
+                        testspec,
+                        isdir,
+                        mode_minusstyle(altered),
+                    )
+
+    main()
+
+    print
+    print "Changed files: %4d (out of %d)"%(len(changed_file), len(all_file))
+    print "Changed dirs:  %4d (out of %d)"%(len(changed_dir), len(all_dir))
+    if len(problems)>0:
+        print "Problem cases: %4d"%len(problems)
+
+
+'''
+TODO: option parsing
+
+
+-u: owner (username or uid)
+-g: group (group name or gid)
+
+
+-c: 
+Meaning:
+ +: add
+ -: remove
+ =: as is
+ d: add only if a directory
+ D: remove only if a direcrory  (TODO: implement)
+
+The most useful are probably things like:
+  "++d+-d+-d": User can write, group and others can read
+  "++d++d+-d": User and group can write, others can read
+  "++d++d---": User and group can write, others have no access
+These are the default behaviours of the variants (symlinks):
+  open-permissions-others-readonly
+  open-permissions-others-nothing
+
+'''
+
+

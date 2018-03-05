@@ -1,0 +1,100 @@
+#!/usr/bin/python
+
+import os
+import sys
+
+
+def kmg(bytes,kilo=1000, append='',thresh=15,rstrip0=1, extradigits=0):
+    """ Readable size formatter
+        e.g. '%sB'%kmg(2342342324) = '2.3 GB'
+             kmg(3429873278462) == '3.1T'
+             kmg(342987327)     == '327M'
+             kmg(34298)         == '33K'
+        Decimal/SI kilos by default. Specify kilo=1024 if you want binary kilos.
+
+        Maybe use sfloat-like behaviour for the number?
+    """
+    ret = None
+    
+    mega = kilo*kilo
+    giga = mega*kilo
+    tera = giga*kilo
+    peta = tera*kilo
+
+    # Yes, can be abstracted now
+    if abs(bytes)>(0.80*peta):
+        showval = bytes/float(peta)
+        if showval<thresh:
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='P'
+
+    elif abs(bytes)>(0.80*tera):
+        showval = bytes/float(tera)
+        if showval<thresh: 
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='T'
+
+    elif abs(bytes)>(0.95*giga):
+        showval = bytes/float(giga)
+        if showval<thresh: # e.g. 1.3GB but 15GB
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='G'
+            
+    elif abs(bytes)>(0.9*mega):
+        showval = bytes/float(mega)
+        if showval<thresh:
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='M'
+    
+    elif abs(bytes)>(0.85*kilo):
+        showval = bytes/float(kilo)
+        if showval<thresh:
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='K'
+    else:
+        showval = bytes
+        showdigits=0
+
+    ret = ("%%.%df"%(showdigits))%showval
+        
+    if rstrip0:
+        if '.' in ret:
+            ret=ret.rstrip('0').rstrip('.')                   
+
+    ret+=append
+        
+    return ret
+
+
+data = [] # list of (size, filename)
+
+print "Reading...",
+cnt=0
+for path in sys.argv[1:]:
+    for r,ds,fs in os.walk(path):
+    	for fn in fs:
+            ffn = os.path.join( r, fn )
+            mode, inode, device, numhardlinks, uid,gid, size, atime, mtime, ctime = os.lstat(ffn)
+            #print ffn
+            data.append( (size, ffn) )
+            cnt += 1
+            if cnt%1000==0:
+                sys.stdout.write('%s '%cnt)
+                sys.stdout.flush()
+print "Done"                
+
+# TODO: option parsing
+show_amt = 30
+            
+for size, fn in sorted( data )[-show_amt:]:
+    print '%6sB\t%r'%( kmg(size), fn )

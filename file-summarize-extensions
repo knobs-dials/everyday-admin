@@ -1,0 +1,165 @@
+#!/usr/bin/python
+import os,time,sys
+
+ext_to_bytes={}
+ext_to_filecount={}
+
+
+def kmg(bytes,kilo=1000, append='',thresh=15,rstrip0=1, extradigits=0):
+    """ Readable size formatter
+        e.g. '%sB'%kmg(2342342324) = '2.3 GB'
+             kmg(3429873278462) == '3.1T'
+             kmg(342987327)     == '327M'
+             kmg(34298)         == '33K'
+        Decimal/SI kilos by default. Specify kilo=1024 if you want binary kilos.
+
+        Maybe use sfloat-like behaviour for the number?
+    """
+    ret = None
+    
+    mega = kilo*kilo
+    giga = mega*kilo
+    tera = giga*kilo
+    peta = tera*kilo
+
+    # Yes, can be abstracted now
+    if abs(bytes)>(0.80*peta):
+        showval = bytes/float(peta)
+        if showval<thresh:
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='P'
+
+    elif abs(bytes)>(0.80*tera):
+        showval = bytes/float(tera)
+        if showval<thresh: 
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='T'
+
+    elif abs(bytes)>(0.95*giga):
+        showval = bytes/float(giga)
+        if showval<thresh: # e.g. 1.3GB but 15GB
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='G'
+            
+    elif abs(bytes)>(0.9*mega):
+        showval = bytes/float(mega)
+        if showval<thresh:
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='M'
+    
+    elif abs(bytes)>(0.85*kilo):
+        showval = bytes/float(kilo)
+        if showval<thresh:
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='K'
+    else:
+        showval = bytes
+        showdigits=0
+
+    ret = ("%%.%df"%(showdigits))%showval
+        
+    if rstrip0:
+        if '.' in ret:
+            ret=ret.rstrip('0').rstrip('.')                   
+
+    ret+=append
+        
+    return ret
+
+
+def main( path, 
+          report_every_sec=2.0,
+          top_sofar=7, 
+          top_final=30, 
+          sortby='count' ):
+    print "Scanning %r"%path
+    def report(how_many=5, sortby='size'):
+        if sortby=='size':
+            l=ext_to_bytes.items()
+        elif sortby=='count':
+            l=ext_to_filecount.items()
+        else:
+            raise ValueError('Do not understand sortby=%r'%sortby)
+
+        l.sort(lambda a,b: -cmp(a[1],b[1]))
+        for ext,val in l[:how_many]:
+            # the next line figures out how wide the extension text must be in each report line
+            fstr = '%%%ds:      %%10siB,  %%6s files'%(max(len(str(ext))   for ext,_ in l[:how_many])) # str() to not trip over None
+
+            print fstr%(
+                ext,
+                kmg(ext_to_bytes[ext], kilo=1024, extradigits=1),
+                ext_to_filecount[ext],            
+                )
+        print "totals    %10siB  (%d bytes),  %6s files"%( kmg(sum(ext_to_bytes.values()), kilo=1024, extradigits=1),
+                                                           sum(ext_to_bytes.values()),
+                                                           sum(ext_to_filecount.values())
+                                                         )
+
+
+    last_report = time.time()
+
+    i=0
+    for r,d,f in os.walk(path):
+        for fn in f:
+            #print fn
+            i+=1
+            if '.' in fn:
+
+                if fn[0]=='.':
+                    ext='(dotfiles)'
+                else:
+                    ext = fn.rsplit('.',1)[1]
+            else:
+                ext = None
+
+            if ext not in ext_to_filecount:
+                ext_to_filecount[ext]=0
+            if ext not in ext_to_bytes:
+                ext_to_bytes[ext]=0
+
+            ffn = os.path.join(r,fn)
+            ext_to_filecount[ext]+=1
+
+            try:
+                stob = os.lstat(ffn)
+                ext_to_bytes[ext]+=stob.st_size
+            except OSError:
+                pass
+                #assume 'No such file or directory' (could test for errno 2)
+
+            now = time.time()
+            if now-last_report > report_every_sec:
+                print "Top %d so far (by %s)"%(min( len(ext_to_bytes), top_sofar), sortby)
+                report(top_sofar, sortby=sortby)
+                last_report=now
+                print
+                
+    print
+    print '-'*50
+    print "Final report (top %d, by %s): "%(min(len(ext_to_bytes),top_final), sortby)
+    report(top_final, sortby=sortby)
+
+
+        
+if __name__=='__main__':
+
+    if len(sys.argv)>1:
+        usedir = sys.argv[1]
+    else:
+        usedir='.'
+
+    usedir = os.path.realpath(usedir)
+
+    main( usedir )
+

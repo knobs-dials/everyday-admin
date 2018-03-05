@@ -1,0 +1,37 @@
+#!/usr/bin/python
+""" Checks under given directories 
+    for file and directory entries that will be confusing to case-insensitive filesystem APIs (such as windows's)
+"""
+
+import os
+import sys
+
+args = sys.argv[1:]
+
+if len(args)==0:
+    sys.stderr.write('Defaulting to look under current directory\n')
+    args=['.']
+
+for arg in args:
+    arg = os.path.abspath(arg)
+    for indir, dirs, files in os.walk( arg ):
+        sofar_low = {}
+        for entry in dirs+files:
+            entry_low = entry.lower()
+            if entry_low not in sofar_low:
+                sofar_low[entry_low] = [ entry ]
+            else:
+                sofar_low[entry_low].append( entry )
+
+        printed_this_dir = False
+        for entry_low in sorted(sofar_low): # an implicitly case-insensitive sort            
+            entries = sofar_low[entry_low]
+            if len(entries)>1:
+                if not printed_this_dir:
+                    printed_this_dir = True
+                    print "# Issues under %r"%indir
+                for i,entry in enumerate(entries):
+                    entry_abs = os.path.join(indir,entry)
+                    print "  %r"%entry_abs
+                print
+                

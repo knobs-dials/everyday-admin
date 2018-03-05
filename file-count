@@ -1,0 +1,530 @@
+#!/usr/bin/python
+
+''' Like du, except 
+    - also counts files and dirs
+    - reports both 
+        apparent size (the byte size presented to users) and 
+        disk usage (the amount of storage actually used, often a little higher, sometimes much lower)
+
+    Does not count symlinks (to know files).
+
+    TODO: allow result sorting by count and(/or) size, which means only reporting once we're done.
+    TODO: add GiB versus GB
+
+Written by Bart Alewijnse
+'''
+
+
+import os
+import sys
+from os.path import join, isdir, islink
+from posix import *
+import re
+
+try:
+    import helpers_shellcolor as sc
+except ImportError:
+    # do-notrhing class if that's not here
+    class scc(object):
+        def brightyellow(self, s):
+            return s
+        def yellow(self, s):
+            return s
+        def gray(self, s):
+            return s
+        def darkgray(self, s):
+            return s
+        def green(self, s):
+            return s
+    sc=scc() #instance
+        
+try:
+    import setproctitle
+    setproctitle.setproctitle('count-files')  # or os.path.basename(sys.argv[0])
+except ImportError:
+    pass
+
+
+printdepthmax = -1
+
+dudiff_percent = False
+
+# globals, ew. TODO: Class-ify?
+errors = []
+link_duplicates = 0
+
+size_in_dir  = {}
+du_in_dir     = {}
+#files_in_dir = {}
+#dirs_in_dir = {}
+
+size_under_dir  = {}
+du_under_dir  = {}
+files_under_dir = {}
+dirs_under_dir = {}
+
+
+ignored_symlinks = False
+linksafe = {}
+slash = None,None # things like wine link to /, we don't want to index everything...
+
+verbose=False
+
+results = [] # used when sorting.
+
+
+
+def kmg(bytes,kilo=1000, append='',thresh=15,rstrip0=1, extradigits=0):
+    """ Readable size formatter
+        e.g. '%sB'%kmg(2342342324) = '2.3 GB'
+             kmg(3429873278462) == '3.1T'
+             kmg(342987327)     == '327M'
+             kmg(34298)         == '33K'
+        Decimal/SI kilos by default. Specify kilo=1024 if you want binary kilos.
+
+        Maybe use sfloat-like behaviour for the number?
+    """
+    ret = None
+    
+    mega = kilo*kilo
+    giga = mega*kilo
+    tera = giga*kilo
+    peta = tera*kilo
+
+    # Yes, can be abstracted now
+    if abs(bytes)>(0.80*peta):
+        showval = bytes/float(peta)
+        if showval<thresh:
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='P'
+
+    elif abs(bytes)>(0.80*tera):
+        showval = bytes/float(tera)
+        if showval<thresh: 
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='T'
+
+    elif abs(bytes)>(0.95*giga):
+        showval = bytes/float(giga)
+        if showval<thresh: # e.g. 1.3GB but 15GB
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='G'
+            
+    elif abs(bytes)>(0.9*mega):
+        showval = bytes/float(mega)
+        if showval<thresh:
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='M'
+    
+    elif abs(bytes)>(0.85*kilo):
+        showval = bytes/float(kilo)
+        if showval<thresh:
+            showdigits = 1 + extradigits
+        else:
+            showdigits = 0 + extradigits
+        append+='K'
+    else:
+        showval = bytes
+        showdigits=0
+
+    ret = ("%%.%df"%(showdigits))%showval
+        
+    if rstrip0:
+        if '.' in ret:
+            ret=ret.rstrip('0').rstrip('.')                   
+
+    ret+=append
+        
+    return ret
+
+def parse_kmg(s, kilo=1000, listen_to_i=False):
+    """ '1k'         --> 1024
+        '2 MB'       --> 2097152
+        '1.51Gflops' --> 1621350154
+        Defaults to binary thousands.
+        Looks for kmgtp.
+        Ignores anything not [0-9kmgtp]        
+        
+        quick and dirty implementation, may need work.
+
+        Kilo defailts to decimal kilos.
+        If you want binary kilos, specify it, or set listen_to_i=True
+        (for things like 4.5KiB).
+        This is false by defauly because you ought to
+        know the amount of preformatting you need to do
+    """
+    if listen_to_i and 'i' in s:
+        kilo=1024
+
+    mega=kilo*kilo
+    giga=mega*kilo
+    tera=giga*kilo
+    peta=tera*kilo
+
+    ns=re.sub(r'[A-Za-z]','',s) #s.rstrip('kmgtpKMGTPiIbB') # or just everything?
+    if ns.count(',')==1: # pseudo-relocalization.
+        ns=ns.replace(',','.') # e.g. for dutch people.
+    try:
+        ret=float(ns)
+        sl=s.lower()
+        # TODO: test whether it's right after the number, to avoid words with these letters messing things up.
+        if 'k' in sl: 
+            ret *= kilo
+        elif 'm' in sl:
+            ret *= mega
+        elif 'g' in sl:
+            ret *= giga
+        elif 't' in sl:
+            ret *= tera
+        elif 'p' in sl:
+            ret *= peta
+        ret=int(ret)
+        return ret
+    
+    except Exception, e:        
+        print "Didn't understand value %r"%ns
+        print e
+        raise
+
+
+
+
+
+def print_under(dn, colors=True): # showabspath=0, 
+    global dudiff_percent, printdepthmax
+
+    dn = os.path.abspath(dn)
+
+    fcnt = files_under_dir[dn]
+    dcnt = dirs_under_dir[dn]
+    sz  = size_under_dir[dn]
+    
+    if fcnt < mincount:
+        return
+    if sz<minsize:
+        return
+    if dn.count(os.sep) > printdepthmax:
+        return
+    # TODO: figure out what to do with dcnt - combing condition?
+
+    fcnt_str = '%8d'%fcnt
+    dcnt_str = '%8d'%dcnt
+    if size_under_dir[dn]==0: # TODO: under a kB (to avoid i)
+        sz_str='         0         '
+    else:
+        sz_str   = '%8s / '%kmg(size_under_dir[dn], kilo=1000, extradigits=extradigits)
+        sz_str  += '%-8s'%(kmg(size_under_dir[dn], kilo=1024, extradigits=extradigits)+'i')
+    #if sz_str[-2] in '[0-9]':
+    #    sz.str=sz_str.rstrip('i')
+
+    dudiff = du_under_dir[dn] - size_under_dir[dn]
+
+    if colors: # highlight unusual directories
+        # note: moderate size or count isn't colored (default, usually gray)
+        
+        if   sz>250*1024*1024*1024: #500GB
+            sz_str = sc.brightyellow(sz_str)            
+        elif sz> 10*1024*1024*1024: #10GB 
+            sz_str = sc.yellow(sz_str)
+        elif sz>1024*1024*1024: #1GB
+            sz_str = sc.gray(sz_str)
+        elif sz<20*1024 or fcnt<4:
+            sz_str = sc.darkgray(sz_str)
+
+        if   fcnt>400000: 
+            fcnt_str = sc.brightyellow(fcnt_str)            
+        elif fcnt>75000: 
+            fcnt_str = sc.yellow(fcnt_str)
+        elif fcnt>5000: 
+            fcnt_str = sc.gray(fcnt_str)
+        elif fcnt<4:
+            fcnt_str = sc.darkgray(fcnt_str)
+
+        if   dcnt>10000: 
+            dcnt_str = sc.brightyellow(dcnt_str)            
+        elif dcnt>1000: 
+            dcnt_str = sc.yellow(dcnt_str)
+        elif dcnt>100: 
+            dcnt_str = sc.gray(dcnt_str)
+        elif dcnt<4:
+            dcnt_str = sc.darkgray(dcnt_str)
+
+    if dudiff==0: # TODO: under a kB (to avoid i)
+        dudiff_str='         0         '
+    else:
+        dudiff_str = '%+8s / '%kmg( dudiff, kilo=1000, extradigits=extradigits)
+        dudiff_str += '%-+8s'%(kmg( dudiff, kilo=1024, extradigits=extradigits)+'i')
+    if 1 or dudiff_percent:
+        if sz==0:
+            ddv = 100
+        else:
+            ddv = (100.*(sz+dudiff))/sz
+        if sz<100000:# or ddv>99. and ddv<101.:
+            dudiff_str += '        '
+        else:
+            tt = '%.1f%%'%ddv
+            if tt.endswith('.0%'):
+                tt=tt[:-3]+'%'
+            dudiff_str += ' %7s'%( tt )
+
+    if abs(dudiff) < 65536:
+        dudiff_str = sc.darkgray(dudiff_str)
+    elif dudiff < 0:
+        if abs(dudiff) > 0.1*sz:
+            dudiff_str = sc.brightgreen(dudiff_str)
+        else:
+            dudiff_str = sc.green(dudiff_str)
+    else:
+        if dudiff < 0.01*sz and dudiff>64*1024:
+            dudiff_str = sc.darkgray(dudiff_str)
+        elif dudiff < 0.1*sz and dudiff>128*1024:
+            dudiff_str = sc.yellow(dudiff_str)
+        elif dudiff < 0.3*sz and dudiff>256*1024:
+            dudiff_str = sc.brightyellow(dudiff_str)
+        
+    msg = '%s%s%s%s   %s'%(fcnt_str,dcnt_str, sz_str, dudiff_str, dn)    
+    print msg
+    
+
+def mywalk(top, onerror=None, followlinks=False, print_while_walking=False):
+    """ this is an stripped and augmented version of from py2's os.walk
+        It saves some stats, and it's bottom-up so we could report as we walk.
+
+        CONSIDER: figure out whether we want to make symlink handling flexible.
+    """
+    import stat
+    global errors, link_duplicates,linksafe, ignored_symlinsk
+
+    if top not in files_under_dir:
+        files_under_dir[top] = 0
+    if top not in dirs_under_dir:
+        dirs_under_dir[top] = 0
+    if top not in size_under_dir:
+        size_under_dir[top] = 0
+    if top not in du_under_dir:
+        du_under_dir[top] = 0
+            
+    try:
+        names = listdir(top)
+    except error, err:
+        #print err
+        if onerror is not None:
+            onerror(err)
+        return
+
+    dirs, nondirs = [], []
+    for name in names:
+    	ffn = join(top, name)
+        try:
+            if os.path.islink(ffn):
+                ignored_symlinks = True
+                continue
+            
+            stob = os.stat(ffn)   # does follow symlinks. TODO: allow control, i.e. lstat for no symlink following?
+                        
+            uniq = (stob.st_dev,stob.st_ino)
+            # CONSIDER: check for link to ancestor instead?
+            if uniq==slash: # /proc does this (cwd link), as does wine 
+                #print "WARNING: skipping link to / (%r in %r)"%(name, top)
+                continue
+            if uniq in linksafe:
+                # TODO: report
+                link_duplicates += 1
+                #print "Duplicate file inode in %r (%d %d, with %r), skipping..."%(ffn,stob.st_dev, stob.st_ino, linksafe[stob.st_dev, stob.st_ino])
+                continue
+                        
+        except (IOError,OSError),e:
+            errors.append(ffn) 
+            continue
+            
+        if stat.S_ISDIR(stob.st_mode):
+            dirs.append(name)
+            
+            # TODO: double-check the next block
+            fe = ffn.split(os.sep)
+            for pi in range(1, len(fe)): # all the higher directories
+                hpath = os.sep.join( fe[:pi] )
+                if hpath not in dirs_under_dir:
+                    dirs_under_dir[hpath] = 0
+                dirs_under_dir[hpath] += 1
+                
+        else: # file or other (CONSIDER: test?)
+            #print "Entering nondir %d %d for %r"%(stob.st_dev, stob.st_ino, ffn)        
+            linksafe[(stob.st_dev,stob.st_ino)] = ffn
+            
+            fe = ffn.split(os.sep)
+            for pi in range(1, len(fe)): # all the higher directories
+                hpath = os.sep.join( fe[:pi] )
+                if hpath not in files_under_dir:
+                    files_under_dir[hpath] = 0
+                files_under_dir[hpath] += 1
+                
+                if hpath not in size_under_dir:
+                    size_under_dir[hpath]=0
+                size_under_dir[hpath] += stob.st_size
+
+                if hpath not in du_under_dir:
+                    du_under_dir[hpath]=0
+                du_under_dir[hpath] += stob.st_blocks*512
+                                
+            nondirs.append(name)
+    
+    for name in dirs:
+        fdn = join(top, name)
+    	stob = os.stat(fdn)
+        uniq = (stob.st_dev,stob.st_ino)
+
+        if uniq==slash:
+            print "WARNING: link to /, skipping..."
+            continue
+        if uniq in linksafe:
+            if verbose:
+                print "Duplicate dir inode in %r (%d %d, with %r), skipping..."%(fdn,stob.st_dev, stob.st_ino, linksafe[stob.st_dev, stob.st_ino])
+            continue
+
+        #print "Entering %d %d for %r"%(stob.st_dev, stob.st_ino, fdn)        
+        linksafe[(stob.st_dev,stob.st_ino)] = fdn
+        
+        #if followlinks or not stat.S_ISLNK(stob.st_mode):
+        for x in mywalk(fdn, onerror=onerror, followlinks=followlinks,print_while_walking=print_while_walking):
+            yield x
+
+        if print_while_walking:
+            print_under(fdn)
+        else:
+            results.append(  (fdn, files_under_dir[fdn], dirs_under_dir[fdn], size_under_dir[fdn], du_under_dir[fdn])  )
+        
+    yield top, dirs, nondirs
+    
+
+
+if __name__=='__main__':
+    from optparse import OptionParser
+    p = OptionParser()
+
+    p.add_option("-n", "--depth",
+                 default='1',
+                 dest="depth",
+                 help="the maximum amount of depth to print, relative to starting point (default: 2)")
+
+    p.add_option("-C", "--mincount",
+                 default='0',
+                 dest="mincount",
+                 help="don't show directories with fewer files than this")
+
+    p.add_option("-e", "--extradigits",
+                 default='0',
+                 dest="extradigits",
+                 help="Default is to show short overviewy sizes, you can ask for more digits")
+
+    p.add_option("-S", "--minsize",
+                 default='0',
+                 dest="minsize",
+                 help="don't show directories with file size summing to less than this (note: understands values like 1.5M)")
+        
+    p.add_option("-s", "--sort-size",
+                 default=None,
+                 action='store_true',
+                 dest="sort_size",
+                 help="sort output by size (postpones output)")
+
+    p.add_option("-t", "--thousand",
+                 default=False,
+                 action='store_true',
+                 dest="thousand",
+                 help="kilos are based on factor 1000 instead of factor 1024")
+
+    p.add_option("-f", "--sort-filecount",
+                 default=None,
+                 action='store_true',
+                 dest="sort_filecount",
+                 help="sort output by file count (postpones output)")
+    
+    p.add_option("-d", "--sort-dircount",
+                 default=None,
+                 action='store_true',
+                 dest="sort_dircount",
+                 help="sort output by directory count (postpones output)")
+
+    p.add_option("-p", "--dudiff-percent",
+                 default=False,
+                 action='store_true',
+                 dest="dudiff_percent",
+                 help="Whether to report the difference between disk usage and apparent size in percent rather than bytes)")
+
+    options, args = p.parse_args()    
+    dudiff_percent = options.dudiff_percent
+
+    extradigits = int(options.extradigits)
+
+    #kilo = 1024
+    #ktrail = 'i'
+    #if options.thousand:
+    #    kilo=1000
+    #    ktrail=' '
+    
+    slash_stob = os.stat('/')
+    slash = (slash_stob.st_dev, slash_stob.st_ino)
+
+    if len(args)==0:
+        path = '.'
+    elif len(args)==1:
+        path = args[0]
+    else:
+        print 'Currently works on exactly one starting path, you gave %s'%len(args)
+        sys.exit(-1)
+
+    path = os.path.abspath( path )
+    if path!='/':
+        path = path.rstrip('/')
+    if not os.path.exists(path):
+        print 'Path  %r  does not exist'%path
+        sys.exit(-1)
+
+    printdepthmax  = path.count('/') + int(options.depth,10)  # TODO: verify. And may the logic more easily verifiable
+    mincount       = int(options.mincount,10)
+    minsize        = parse_kmg(options.minsize)
+
+    print_while_walking = True
+    if options.sort_size!=None or options.sort_filecount!=None or options.sort_dircount!=None:
+        print_while_walking = False
+        print "Output postponed until we are done, since we'll be sorting it..."
+
+    print "  #FILES   #DIRS       ASIZE              DUDIFF        DU (%)   PATH"
+
+    # do the filesystem work, and report as we go
+    for r,ds,fs in mywalk(path, print_while_walking=print_while_walking):
+        pass
+
+    if not print_while_walking: # condition is actually 'if we are sorting'
+        results.append( (path, files_under_dir[path], dirs_under_dir[path], size_under_dir[path], du_under_dir[path]) )
+        
+        if options.sort_size:
+            results.sort(lambda a,b: cmp(a[3],b[3]))
+        elif options.sort_filecount:
+            results.sort(lambda a,b: cmp(a[2],b[2]))            
+        elif options.sort_dircount:
+            results.sort(lambda a,b: cmp(a[1],b[1]))            
+        for dn,_,_,_,_ in results:
+            print_under(dn)
+    else:
+        print_under(path) # the one the recursion forgets :)
+
+    if link_duplicates > 0:
+        print "%d link duplicates"%link_duplicates
+
+    if len(errors) > 0:
+        print "INFO: incomplete; could not access %d items"%len(errors)
+        #print errors
+
+    if ignored_symlinks:
+        print "INFO: we ignored some symlinks"
+

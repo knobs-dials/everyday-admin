@@ -1,0 +1,169 @@
+#!/usr/bin/python
+# 
+# renices and/or ionices processes by name. Optionally focuses on a single user
+# 
+
+import os
+import sys
+import optparse
+import glob
+import pwd
+
+
+
+def procs_matching(substring, user=None, match_cmd=True, cmd_basename=True, match_args=False):
+    ''' Returns a list of (pid,name,basecmd, cmdandargs) 
+        for all processes whose name matches this substring and/or username.
+
+        Username is exact match. If both substring and user are specified,
+        it only matches that user's matches.
+        
+        By default it checks whether the substring is in either 
+        - the process name 
+        - its command 
+          (by default using the basename, ignoring any path to it)
+        Optionally also matches strings in the command-line arguments
+    '''
+    resolveduid=None
+    if user==None:
+        pass
+    elif type(user) is type(''):
+        #print pwd.getpwnam(user)
+        resolveduid = pwd.getpwnam(user).pw_uid
+    else: # assume integer. TODO: don't assume.
+        resolveduid = user
+
+    matches = []
+    for path in glob.glob('/proc/*'):
+        bn = os.path.basename(path)
+        try:
+            
+            try:
+                pid = int(bn)
+            except ValueError:
+                #print "Skipping %r, not a PID"%path
+                continue
+
+            fstatus = open('/proc/%d/status'%pid)
+            uid = None
+            retuser = None
+            matched_user = False
+            for line in fstatus:
+                #print line
+                if line.lower().startswith('uid'): # TODO: same for GID
+                    _,four = line.split(':',1)
+                    real,effective,savedset,filesys = four.strip().split()
+                    retuser = pwd.getpwuid(int(effective)).pw_name
+                    if resolveduid in ( int(real), int(effective)):
+                        matched_user = True
+                    break
+            fstatus.close()
+            if user!=None and not matched_user:
+                #print "uid %d not in %r"%(resolveduid,four)
+                continue
+            
+            fcomm    = open('/proc/%d/comm'%pid)
+            comm = fcomm.read().strip()
+            fcomm.close()
+            
+            fcmdline = open('/proc/%d/cmdline'%pid)
+            cmdline = fcmdline.read().strip()
+            cmd, args = (cmdline+'\x00').split('\x00',1) # the +x00 is to take care of cases without it, e.g. init and things that rewrite it
+            cmdbase = os.path.basename( cmd )
+            fcmdline.close()
+            
+            if cmd_basename:
+                cmd = cmdbase
+                        
+            if (substring in comm or 
+                 (match_cmd  and substring in cmd) or
+                 (match_args and substring in args)
+               ):
+                matches.append( (pid,retuser,comm,cmdline) )
+
+        except IOError:
+            pass
+            #print "Skipping %r, gone already?"%path
+            
+        except ValueError:
+            pass
+            print "Skipping %r, am confused"%path
+
+    return matches
+
+
+if __name__ == '__main__':
+    p=optparse.OptionParser()
+
+    p.add_option('-n','--nice',  default=None,   action="store", dest='nice',  
+                 help="Niceness to set. Default is not to change. Example: 5 to set lower-than-average")
+
+    p.add_option('-i','--ionice',  default=None,   action="store", dest='ionice',  
+                 help="Ioniceness to set within class. Default is not to change. Range is 1 (higher priority) to 7 (lower), 4 being default on a process.")
+
+    p.add_option('-l','--lazy',  default=False,   action="store_true", dest='lazy',  
+                help="For lazy typers: short for -n 10 -i 7  (overrides -n/-i if also specified)")
+
+    p.add_option('-c','--ionice--class',  default=None,   action="store", dest='ioclass',  
+                 help="Ioniceness class to set. Best effort (default) is 2, 3 is for idle, 1 for realtime. WARNING: realtime steals from everything, idle gets trampled over, so when only looking to rebalance a bit, use only -i.")
+
+    p.add_option('-u','--user',  default=None,   action="store", dest='user',  
+                 help="Restrict our selection to a specific specific user's processes (exact username).")
+
+    p.add_option('-d','--dry-run',  default=False,   action="store_true", dest='dryrun',  
+                 help="Just print what we would do, don't actually do it.")
+
+    options,args = p.parse_args()
+
+
+    if len(args)!=1:
+        print 'Need one argument, a substring to match'
+        sys.exit()
+
+    for pid,user,comm,cmdargs in procs_matching(substring=args[0], user=options.user):
+        did_something = False
+
+        print
+        print '%r  (PID %d) matches'%(comm, pid)
+
+        if options.lazy:
+            options.ionice = '7'
+            options.nice   = '10'
+
+        if options.ionice or options.ioclass:
+            args = []
+            if options.ionice:
+                prio   = int(options.ionice)
+                args.extend(  ('-n', str(  max(0,min(7, prio)) )  )  )
+
+            if options.ioclass:
+                ioclass  = int(options.ioclass)
+                args.extend(  ('-c', str(  max(0,min(3, ioclass)) )  )  )
+
+            cmd = "ionice %s -p %s" % ( ' '.join(args), pid )
+            if options.dryrun:
+                print "  would run:",
+            else:
+                print "  running:",
+            print '  %r'%(cmd)
+            if not options.dryrun:
+                os.system( cmd )
+            did_something = True
+
+        if options.nice:
+            args = ('-n', str(  max(-20,min(20, int(options.nice) ))  )  )
+
+            cmd = "renice %s -p %s" % ( ' '.join(args), pid ) 
+            if options.dryrun:
+                print "  would run:",
+            else:
+                print "  running:",
+            print '  %r'%(cmd)
+            if not options.dryrun:
+                os.system( cmd )
+            did_something = True
+
+        if not did_something:
+            print "  no request for priority change"
+
+    print

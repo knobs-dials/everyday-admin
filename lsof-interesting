@@ -1,0 +1,9 @@
+#!/bin/bash
+
+if [ "T$1T" = "TT" ]; then
+  # without arguments we show just files, minus some obvious boring stuff
+  lsof | egrep ' REG ' | egrep -v '(/lib|/dev/|/usr/bin|/usr/sbin|/bin)' | egrep -v '(/SYSV|/var/cache|/var/lock|/run)' | fgrep -v '/[aio]'
+else
+  # with an argument we grep those results for whatever we got.
+  lsof | egrep ' REG ' | egrep -v '(/lib|/dev/|/usr/bin|/usr/sbin|/bin)' | egrep -v '(/SYSV|/var/cache|/var/lock|/run)' | fgrep -v '/[aio]' | grep "$1" 
+fi
