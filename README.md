@@ -1,73 +1,16 @@
 
 
-## svn-summarize-recent
+## ssh-permission-check
 
-A script with a few svn calls that shows the commit message and list of files involved for
-
-- the difference between repository HEAD and local code
-- the difference between the last revisions we know of
-
-You'll want a passwordless auth for this, or it'll ask you a dozen times, once for each part.
-
-
-## svn-headdiff
-
-Shows the diff between repository HEAD and local code
-
-
-
-
-## straceD
-
-Periodically checks for processes that are in D (IO wait) state,
-straces them if they do so persistently.
-
-Meant a relatively automatic 'what's making my drives churn so hard?'
-though has other uses.
-
-Defaults to only summarizing the calls (strace's -c parameter),
-because when disk contention happens it tends to create a choir of processes.
-
-
-
-## otherpeople
-
-Tries to summarize what various people are up to 
-* shows process names -- and filters out boring stuff, particularly for root
-* shows working dir for shells (and some others)
-* CPU / wait state if worth mentioning
+You know when ssh refuses to do something because it doesn't like your permissions?
+This suggests chowns to fix that   (and a few restrictive things, just because)
 
 ```
-    # otherpeople
-    root
-         4 *  bash
-                in '/var/www/coding/github-sys-tools'
-                in '/root'
-                in '/var/www/coding/github-file-tools'
-         3 *  sshd
-         3 *  smbd
-         2 *  tmux
-              fancontrol
-              wolforward
-              fail2ban-server
-              john                99%CPU
-                in '/root'
-              master
-              emacs
-              docker
-
-    tunneler
-              sshd
-
-    me
-              Xtightvnc
-              x-window-manage
-              xstartup
-              dd                  52%CPU  waiting on IO  <--------
-              bash
-              in '/home/me'
+    $ sudo ssh-permission-check
+    chmod 750 '/root/.ssh'                  # currently: 770
+    chmod 600 '/root/.ssh/bridgetrust.pub'  # currently: 644
+    # Checked users: repository, root, tunneler
 ```
-
 
 
 
@@ -120,33 +63,19 @@ Options:
 
 
 
-## lsof-interesting
-
-lsof with a grep that filters out most not-really-file stuff.
-Verrry simple.
 
 
+## straceD
 
+Periodically checks for processes that are in D (IO wait) state,
+straces them if they do so persistently.
 
+Meant a relatively automatic 'what's making my drives churn so hard?'
+though has other uses.
 
+Defaults to only summarizing the calls (strace's -c parameter),
+because when disk contention happens it tends to create a choir of processes.
 
-
-## file-caseclash
-
-```
-    $ file-caseclash /data
-    # Issues under '/data/NerdDocs/learning'
-      '/data/NerdDocs/learning/[learn] N-grams, smoothing.pdf'
-      '/data/NerdDocs/learning/[learn] N-grams, Smoothing.pdf'
-
-    # Issues under '/data/Installs/Game/Older - C64/unsorted/'
-      '/data/Installs/Game/Older - C64/unsorted/README.TXT
-      '/data/Installs/Game/Older - C64/unsorted/Readme.txt
-      '/data/Installs/Game/Older - C64/unsorted/README.txt
-      '/data/Installs/Game/Older - C64/unsorted/readme.txt
-```
-
-Checks directories for file and directory entries that will be confusing to case-insensitive filesystem APIs ( such as windows's)
 
 
 
@@ -214,6 +143,93 @@ Helps find what you / other people / programs were recently working on.
          40min 33sec:  /root/.bash_history
          35min 33sec:  /root/.local/share/mc/history
 ```
+
+
+
+
+## otherpeople
+
+Tries to summarize what various people are up to 
+* shows process names -- and filters out boring stuff, particularly for root
+* shows working dir for shells (and some others)
+* CPU / wait state if worth mentioning
+
+```
+    # otherpeople
+    root
+         4 *  bash
+                in '/var/www/coding/github-sys-tools'
+                in '/root'
+                in '/var/www/coding/github-file-tools'
+         3 *  sshd
+         3 *  smbd
+         2 *  tmux
+              fancontrol
+              wolforward
+              fail2ban-server
+              john                99%CPU
+                in '/root'
+              master
+              emacs
+              docker
+
+    tunneler
+              sshd
+
+    me
+              Xtightvnc
+              x-window-manage
+              xstartup
+              dd                  52%CPU  waiting on IO  <--------
+              bash
+              in '/home/me'
+```
+
+
+
+
+## svn-summarize-recent
+
+A script with a few svn calls that shows the commit message and list of files involved for
+
+- the difference between repository HEAD and local code
+- the difference between the last revisions we know of
+
+You'll want a passwordless auth for this, or it'll ask you a dozen times, once for each part.
+
+
+
+## svn-headdiff
+
+Shows the diff between repository HEAD and local code
+
+
+
+## lsof-interesting
+
+lsof with a grep that filters out most not-really-file stuff.
+Verrry simple.
+
+
+
+## file-caseclash
+
+```
+    $ file-caseclash /data
+    # Issues under '/data/NerdDocs/learning'
+      '/data/NerdDocs/learning/[learn] N-grams, smoothing.pdf'
+      '/data/NerdDocs/learning/[learn] N-grams, Smoothing.pdf'
+
+    # Issues under '/data/Installs/Game/Older - C64/unsorted/'
+      '/data/Installs/Game/Older - C64/unsorted/README.TXT
+      '/data/Installs/Game/Older - C64/unsorted/Readme.txt
+      '/data/Installs/Game/Older - C64/unsorted/README.txt
+      '/data/Installs/Game/Older - C64/unsorted/readme.txt
+```
+
+Checks directories for file and directory entries that will be confusing to case-insensitive filesystem APIs ( such as windows's)
+
+
 
 
 
@@ -301,7 +317,7 @@ I mostly use this as a more targeted variant of file-summarize-extensions
     # find /tmp -ctime +14 | file-totalsize
     63.4MiB / 66.5MB  (66491289 bytes)  in 240 files
 
-    # images from digital cameras
+    # JPGs from cameras
     # find /data/images -iname '*.jp*' | egrep ^DSC | file-totalsize
     121MiB / 127MB  (127194089 bytes)  in 15 files
 ```
@@ -350,25 +366,10 @@ As a sysadmin, it's nice to quickly see who your inactive users and your abusers
 ```
 
 
-## ssh-permission-check
-
-You know when ssh refuses to do something because it doesn't like your permissions?
-This suggests chowns to fix that   (and a few restrictive things, just because)
-
-```
-    $ sudo ssh-permission-check
-    chmod 750 '/root/.ssh'                  # currently: 770
-    chmod 600 '/root/.ssh/bridgetrust.pub'  # currently: 644
-    # Checked users: repository, root, tunneler
-```
-
-
 
 ## TODO
 
 Cleanup for all. 
 
 Option parsing for all.
-
-
 
