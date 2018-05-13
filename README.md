@@ -36,46 +36,33 @@ Example use:
 ```
 
 
-For reference:
-
-```
-Usage: renicer [options]
-
-Options:
-  -h, --help            show this help message and exit
-  -n NICE, --nice=NICE  Niceness to set. Default is not to change. Example: 5
-                        to set lower-than-average
-  -i IONICE, --ionice=IONICE
-                        Ioniceness to set within class. Default is not to
-                        change. Range is 1 (higher priority) to 7 (lower
-                        priority), with 4 being the default.
-  -l, --lazy            For lazy typers: short for -n 10 -i 7  (overrides
-                        -n/-i if also specified)
-  -c IOCLASS, --ionice--class=IOCLASS
-                        Ioniceness class to set. Best effort (default) is 2, 3
-                        is for idle, 1 for realtime. WARNING: realtime steals
-                        from everything, idle gets trampled over, so when only
-                        looking to rebalance a bit, use only -i.
-  -u USER, --user=USER  Restrict our selection to a specific specific user's
-                        processes (exact username).
-  -d, --dry-run         Just print what we would do, don't actually do it.
-```
-
-
-
-
 
 ## straceD
 
-Periodically checks for processes that are in D (IO wait) state,
-straces them if they do so persistently.
+Periodically checks for processes that are in D state (IOwait),
+straces them if they do so persistently, and stops once they behave.
 
-Meant a relatively automatic 'what's making my drives churn so hard?'
+Meant a relatively automatic 'what programs are making my drives churn so hard / are bothered by this?'
 though has other uses.
 
 Defaults to only summarizing the calls (strace's -c parameter),
 because when disk contention happens it tends to create a choir of processes.
 
+
+
+## strace-openedfiles
+
+Runs a given command.
+For all open() calls that strace mentions, prints unique existing filenames.
+
+Discards the command's stdout
+(CONSIDER: our output on stderr)
+
+
+Also checks whether these files are larger than 1MB,
+which is because this was written for something like
+  strace-openedfiles  ag work_mem
+...to see whether it's reading any larrge files it shouldn't.
 
 
 
