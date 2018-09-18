@@ -42,54 +42,56 @@ Example use:
 Periodically checks for processes that are in D state (IOwait),
 straces them if they do so persistently, and stops once they behave.
 
-Meant a relatively automatic 'what programs are making my drives churn so hard / are bothered by this?'
-though has other uses.
+Meant a relatively automatic 'what programs are making my drives churn so hard / are bothered by this?' ...though has other uses.
 
 Defaults to only summarizing the calls (strace's -c parameter),
-because when disk contention happens it tends to create a choir of processes.
+because when disk contention happens, it tends to create a choir of processes
+and this gives you a little more hope at guessing which one was the cause.
+
+```
+# straceD
+Everything is behaving...
+Everything is behaving...
+Everything is behaving...
+Not stracing, probably a kernel process (PID 607, 'jbd2/sdc1-8')
+Starting to trace process (PID 26099, 'smartctl')
+smartctl(26098):
+smartctl(26099):
+smartctl(26098): strace: Process 26098 attached
+smartctl(26098): % time     seconds  usecs/call     calls    errors syscall
+smartctl(26098): ------ ----------- ----------- --------- --------- ----------------
+smartctl(26098):   0.00    0.000000           0        22           write
+smartctl(26098):   0.00    0.000000           0         1           close
+smartctl(26098):   0.00    0.000000           0         1           brk
+smartctl(26098):   0.00    0.000000           0         1           ioctl
+smartctl(26098): ------ ----------- ----------- --------- --------- ----------------
+smartctl(26098) end-of-strace
+Reader thread for smartctl(26098) finished
+Everything is behaving...
+Everything is behaving...
+```
 
 
 
 ## strace-openedfiles
 
-Runs a given command.
-For all open() calls that strace mentions, prints unique existing filenames.
+Runs and straces a given command.
+For all open() calls that it does, prints unique existing filenames.
 
 Discards the command's stdout
-(CONSIDER: our output on stderr)
+TODO: allow printing it on stderr instead, or logging it elsewhere.
 
-
-Also checks whether these files are larger than 1MB,
-which is because this was written for something like
-  strace-openedfiles  ag work_mem
-...to see whether it's reading any larrge files it shouldn't.
-
-
-
-file-count
-===
-
+Also stats these files, and when they're large than 1MB prints LARGE,
+because this was written to see which files a grepalike was spending so much time on:
 ```
-    # file-count /home -S 100M
-      #FILES   #DIRS     APPASIZE            PATH
-        3966      61   13.4G / 12.4Gi        /home/repository
-       15757    5122    4.1G / 3.8Gi         /home/scarfboy
-       19981    5377     18G / 16Gi          /home
-
-    # file-count /pool/postgres -d
-     #FILES   #DIRS      APPASIZE            DUDIFF        DU (%)   PATH
-        855      26     39M / 37Mi        3.3M / 3.2Mi     108.6%   /zzz/postgresql/9.5
-       1053      22    8.1G / 7.5Gi      -6.6G / -6.1Gi     18.2%   /zzz/postgresql/9.3
-       1910      50    8.1G / 7.6Gi      -6.6G / -6.1Gi     18.7%   /zzz/postgresql
+# strace-openedfiles  ag work_mem | grep ^LARGE
+LARGE /usr/lib/locale/locale-archive
+LARGE ./solardata/solar__.csv
+LARGE ./solardata/solar.sql
 ```
 
-A slightly more informative variation on du that should make it easier to find where bulky things are:
-* reports a subtree's size, and the number of files and directories it contains
-* reports both base-1000 and base-1024 numbers
-* by default doesn't print things 2 steps deeper than where you started
-* optionally adds actual disk use, and percent difference (for me mostly to see ZFS compression)
-* optionally doesn't print small-fry individual directories
-* optionally sorts by size
+TODO: consider things that would be aliases (e.g. alias ag='ag --path-to-agignore ~/.agignore')
+
 
 
 
