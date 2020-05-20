@@ -37,6 +37,46 @@ Example use:
 
 
 
+## file-recent
+
+Reports the most recently altered files under a path (via ctime/mtime).
+Helps find what you / other people / programs were recently working on.
+
+```
+    # file-recent ~
+    Looking in '/root'
+       including files where max(ctime,mtime) is in the last 100 days
+       will sort results by age
+       and show the 5 most recent files
+          2mo   2wk :  /root/.mozilla/firefox/Crash Reports/InstallTime20160606114208
+          5dy   2hr :  /root/.lesshst
+          1hr  24min:  /root/.Xauthority
+         40min 33sec:  /root/.bash_history
+         35min 33sec:  /root/.local/share/mc/history
+```
+
+
+
+file-open-permissions
+===
+
+Helper around chmod and chown that you can use recursively around directories.  For example,
+
+```
+   file-open-permissions --user uname --group gname .
+```
+...is roughly equivalent to:
+
+```
+   find . -type d -print0 | xargs -0 chown chmod ug+rwx
+   find . -type d -print0 | xargs -0 chown chmod o+rx
+   find . -type f -print0 | xargs -0 chown chmod ug+rw
+   find . -type f -print0 | xargs -0 chown chmod o+r
+   chmod uname:gname -R .
+```
+
+
+
 ## straceD
 
 Periodically checks for processes that are in D state (IOwait),
@@ -73,26 +113,6 @@ Everything is behaving...
 
 
 
-file-open-permissions
-===
-
-Helper around chmod and chown that you can use recursively around directories.  For example,
-
-```
-   file-open-permissions --user uname --group gname .
-```
-...is roughly equivalent to:
-
-```
-   find . -type d -print0 | xargs -0 chown chmod ug+rwx
-   find . -type d -print0 | xargs -0 chown chmod o+rx
-   find . -type f -print0 | xargs -0 chown chmod ug+rw
-   find . -type f -print0 | xargs -0 chown chmod o+r
-   chmod uname:gname -R .
-```
-
-
-
 ## strace-openedfiles
 
 Runs and straces a given command.
@@ -111,27 +131,6 @@ LARGE ./solardata/solar.sql
 ```
 
 TODO: consider things that would be aliases (e.g. alias ag='ag --path-to-agignore ~/.agignore')
-
-
-
-## file-recent
-
-Reports the most recently altered files under a path (via ctime/mtime).
-Helps find what you / other people / programs were recently working on.
-
-```
-    # file-recent ~
-    Looking in '/root'
-       including files where max(ctime,mtime) is in the last 100 days
-       will sort results by age
-       and show the 5 most recent files
-          2mo   2wk :  /root/.mozilla/firefox/Crash Reports/InstallTime20160606114208
-          5dy   2hr :  /root/.lesshst
-          1hr  24min:  /root/.Xauthority
-         40min 33sec:  /root/.bash_history
-         35min 33sec:  /root/.local/share/mc/history
-```
-
 
 
 
