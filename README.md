@@ -73,6 +73,26 @@ Everything is behaving...
 
 
 
+file-open-permissions
+===
+
+Helper around chmod and chown that you can use recursively around directories.  For example,
+
+```
+   file-open-permissions --user uname --group gname .
+```
+...is roughly equivalent to:
+
+```
+   find . -type d -print0 | xargs -0 chown chmod ug+rwx
+   find . -type d -print0 | xargs -0 chown chmod o+rx
+   find . -type f -print0 | xargs -0 chown chmod ug+rw
+   find . -type f -print0 | xargs -0 chown chmod o+r
+   chmod uname:gname -R .
+```
+
+
+
 ## strace-openedfiles
 
 Runs and straces a given command.
@@ -91,27 +111,6 @@ LARGE ./solardata/solar.sql
 ```
 
 TODO: consider things that would be aliases (e.g. alias ag='ag --path-to-agignore ~/.agignore')
-
-
-
-
-file-open-permissions
-===
-
-Helper around chmod and chown that you can use recursively around directories.  For example,
-
-```
-   file-open-permissions --user uname --group gname .
-```
-...is roughly equivalent to:
-
-```
-   find . -type d -print0 | xargs -0 chown chmod ug+rwx
-   find . -type d -print0 | xargs -0 chown chmod o+rx
-   find . -type f -print0 | xargs -0 chown chmod ug+rw
-   find . -type f -print0 | xargs -0 chown chmod o+r
-   chmod uname:gname -R .
-```
 
 
 
