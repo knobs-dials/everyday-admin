@@ -14,29 +14,6 @@ This suggests chowns to fix that   (and a few restrictive things, just because)
 
 
 
-## renicer
-
-Wrapper that eases renice+ionice.
-Reads from /proc, /etc/passwd.
-
-Example use:
-
-``` 
- # renicer -l relion
-
-'relion_refine_m'  (PID 32439) matches
-  running:   'ionice -n 7 -p 32439'
-  running:   'renice -n 10 -p 32439'
-32439 (process ID) old priority 0, new priority 10
-
-'relion_refine_m'  (PID 32440) matches
-  running:   'ionice -n 7 -p 32440'
-  running:   'renice -n 10 -p 32440'
-32440 (process ID) old priority 0, new priority 10
-```
-
-
-
 ## file-recent
 
 Reports the most recently altered files under a path (via ctime/mtime).
