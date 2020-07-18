@@ -1,3 +1,4 @@
+Various shell scripts I've made in the process of having sysadmin as a side job.
 
 
 ## ssh-permission-check
