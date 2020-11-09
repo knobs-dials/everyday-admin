@@ -176,7 +176,7 @@ and that sit under a given directory.
 have not changed size/ctime in a while (currently hardcoded to ~10 seconds),
 and then will print them once and never again.
 
-I use this to compress incoming data on a server after it's fairly certain they are compete:
+I use this to compress incoming data on a server after it's fairly certain they are complete:
 
 ```
    file-stable '*.dat' /data/archive | xargs -t -n 1 -P 3 pigz -3
