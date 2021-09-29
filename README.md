@@ -8,7 +8,7 @@ Sorted roughly in order of how much I seem to actually use them.
 file-open-permissions
 ===
 
-Helper around chmod and chown that you can use recursively around directories.  For example,
+Helper that does chmod and chown, that you can use recursively around directories.  For example,
 
 ```
    file-open-permissions --user uname --group gname .
@@ -22,6 +22,7 @@ Helper around chmod and chown that you can use recursively around directories.  
    find . -type f -print0 | xargs -0 chown chmod o+r
    chmod uname:gname -R .
 ```
+TODO: allow option to specifically include/exclude setting the directory we point to, not just its entries.
 
 
 
