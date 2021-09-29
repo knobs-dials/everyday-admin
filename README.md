@@ -1,16 +1,46 @@
 Various shell scripts I've made in the process of having sysadmin as a side job.
 
+Sorted roughly in order of how much I seem to actually use them.
 
-## ssh-permission-check
 
-You know when ssh refuses to do something because it doesn't like your permissions?
-This suggests chowns to fix that   (and a few restrictive things, just because)
+
+
+file-open-permissions
+===
+
+Helper around chmod and chown that you can use recursively around directories.  For example,
 
 ```
-    $ sudo ssh-permission-check
-    chmod 750 '/root/.ssh'                  # currently: 770
-    chmod 600 '/root/.ssh/bridgetrust.pub'  # currently: 644
-    # Checked users: repository, root, tunneler
+   file-open-permissions --user uname --group gname .
+```
+...is roughly equivalent to:
+
+```
+   find . -type d -print0 | xargs -0 chown chmod ug+rwx
+   find . -type d -print0 | xargs -0 chown chmod o+rx
+   find . -type f -print0 | xargs -0 chown chmod ug+rw
+   find . -type f -print0 | xargs -0 chown chmod o+r
+   chmod uname:gname -R .
+```
+
+
+
+## file-largest
+
+List the largest files under the given path(s).
+
+```
+    # file-largest /opt /tmp
+    Reading '/opt'...
+    Reading '/tmp'...
+    Done
+      100MB '/opt/google/chrome/chrome'
+      101MB '/opt/scipion-2016-01-30/.git/objects/pack/pack-043cf8c2d2435990ca2a8c6d489dd7c454eb29f0.pack'
+      104MB '/opt/scipion/.git/objects/pack/pack-f826a4cffb9f8afd8ade60c07d33a349d6ce4c28.pack'
+      124MB '/opt/PEET/ParticleRuntime/v84/sys/jxbrowser-chromium/glnxa64/chromium/libjxbrowser-chromium-lib.so'
+      177MB '/opt/PEET/ParticleRuntime/v84/bin/glnxa64/libnppi.so.6.0.37'
+      239MB '/opt/coot-Linux-x86_64-ubuntu-14.04-gtk2-python/libexec/coot-bin'
+      7.7GB '/opt/R2015b_glnxa64.iso'    
 ```
 
 
@@ -35,22 +65,16 @@ Helps find what you / other people / programs were recently working on.
 
 
 
-file-open-permissions
-===
+## ssh-permission-check
 
-Helper around chmod and chown that you can use recursively around directories.  For example,
-
-```
-   file-open-permissions --user uname --group gname .
-```
-...is roughly equivalent to:
+You know when ssh refuses to do something because it doesn't like your permissions?
+This suggests chowns to fix that   (and a few restrictive things, just because)
 
 ```
-   find . -type d -print0 | xargs -0 chown chmod ug+rwx
-   find . -type d -print0 | xargs -0 chown chmod o+rx
-   find . -type f -print0 | xargs -0 chown chmod ug+rw
-   find . -type f -print0 | xargs -0 chown chmod o+r
-   chmod uname:gname -R .
+    $ sudo ssh-permission-check
+    chmod 750 '/root/.ssh'                  # currently: 770
+    chmod 600 '/root/.ssh/bridgetrust.pub'  # currently: 644
+    # Checked users: repository, root, tunneler
 ```
 
 
@@ -77,6 +101,11 @@ LARGE ./solardata/solar.sql
 
 TODO: consider things that would be aliases (e.g. alias ag='ag --path-to-agignore ~/.agignore')
 
+
+## lsof-interesting
+
+lsof with a grep that filters out most not-really-file stuff.
+Verrry simple.
 
 
 ## otherpeople
@@ -137,11 +166,6 @@ Shows the diff between repository HEAD and local code
 
 
 
-## lsof-interesting
-
-lsof with a grep that filters out most not-really-file stuff.
-Verrry simple.
-
 
 
 ## file-caseclash
@@ -184,25 +208,6 @@ I use this to compress incoming data on a server after it's fairly certain they 
 
 
 
-## file-largest
-
-List the largest files under the given path(s).
-
-```
-    # file-largest /opt /tmp
-    Reading '/opt'...
-    Reading '/tmp'...
-    Done
-      100MB '/opt/google/chrome/chrome'
-      101MB '/opt/scipion-2016-01-30/.git/objects/pack/pack-043cf8c2d2435990ca2a8c6d489dd7c454eb29f0.pack'
-      104MB '/opt/scipion/.git/objects/pack/pack-f826a4cffb9f8afd8ade60c07d33a349d6ce4c28.pack'
-      124MB '/opt/PEET/ParticleRuntime/v84/sys/jxbrowser-chromium/glnxa64/chromium/libjxbrowser-chromium-lib.so'
-      177MB '/opt/PEET/ParticleRuntime/v84/bin/glnxa64/libnppi.so.6.0.37'
-      239MB '/opt/coot-Linux-x86_64-ubuntu-14.04-gtk2-python/libexec/coot-bin'
-      7.7GB '/opt/R2015b_glnxa64.iso'    
-```
-
-
 
 ## file-cleanafter-rsync
 
@@ -211,6 +216,18 @@ or stale (much older than the real file alongside).
 
 This looks for them, checks that they're not recent, and reports and optionally removes them.
 
+
+
+## file-readin
+
+Reads a file. So that it's in the page cache.
+(note: you may care to know about the vmtouch utility)
+
+```
+    # readin -w png -w jpg -r /data/images
+    Reading: /data/images/eb8f2be459aad473b5dd64680d78b810ddf2a8cf.jpg
+    Reading: /data/images/bdff38ce75cbbd76803c4e25478faa64553d0b08.jpg  
+```
 
 
 ## file-summarize-extensions
@@ -254,17 +271,6 @@ I mostly use this as a more targeted variant of file-summarize-extensions
     121MiB / 127MB  (127194089 bytes)  in 15 files
 ```
 
-
-## file-readin
-
-Reads a file. So that it's in the page cache.
-(note: you may care to know about the vmtouch utility)
-
-```
-    # readin -w png -w jpg -r /data/images
-    Reading: /data/images/eb8f2be459aad473b5dd64680d78b810ddf2a8cf.jpg
-    Reading: /data/images/bdff38ce75cbbd76803c4e25478faa64553d0b08.jpg  
-```
 
 
 ## file-estimate-homediruse
