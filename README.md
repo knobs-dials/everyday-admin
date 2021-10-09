@@ -148,24 +148,6 @@ Tries to summarize what various people are up to
 
 
 
-## svn-summarize-recent
-
-A script with a few svn calls that shows the commit message and list of files involved for
-
-- the difference between repository HEAD and local code
-- the difference between the last revisions we know of
-
-You'll want a passwordless auth for this, or it'll ask you a dozen times, once for each part.
-
-
-
-## svn-headdiff
-
-Shows the diff between repository HEAD and local code
-
-
-
-
 
 ## file-caseclash
 
