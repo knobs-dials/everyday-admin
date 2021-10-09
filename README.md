@@ -11,16 +11,16 @@ file-open-permissions
 Helper that does chmod and chown, that you can use recursively around directories.  For example,
 
 ```
-   file-open-permissions --user uname --group gname .
+   file-open-permissions --user uname --group gname PATH
 ```
 ...is roughly equivalent to:
 
 ```
-   find . -type d -print0 | xargs -0 chown chmod ug+rwx
-   find . -type d -print0 | xargs -0 chown chmod o+rx
-   find . -type f -print0 | xargs -0 chown chmod ug+rw
-   find . -type f -print0 | xargs -0 chown chmod o+r
-   chmod uname:gname -R .
+   find PATH -type d -print0 | xargs -0 chown chmod ug+rwx
+   find PATH -type d -print0 | xargs -0 chown chmod o+rx
+   find PATH -type f -print0 | xargs -0 chown chmod ug+rw
+   find PATH -type f -print0 | xargs -0 chown chmod o+r
+   chmod uname:gname -R PATH
 ```
 TODO: allow option to specifically include/exclude setting the directory we point to, not just its entries.
 
