@@ -16,10 +16,8 @@ Helper that does chmod and chown, that you can use recursively around directorie
 ...is roughly equivalent to:
 
 ```
-   find PATH -type d -print0 | xargs -0 chown chmod ug+rwx
-   find PATH -type d -print0 | xargs -0 chown chmod o+rx
-   find PATH -type f -print0 | xargs -0 chown chmod ug+rw
-   find PATH -type f -print0 | xargs -0 chown chmod o+r
+   find PATH -type d -print0 | xargs -0 chown chmod ug+rwx,o+rx
+   find PATH -type f -print0 | xargs -0 chown chmod ug+rw,o+r
    chmod uname:gname -R PATH
 ```
 TODO: allow option to specifically include/exclude setting the directory we point to, not just its entries.
