@@ -67,7 +67,8 @@ Helps find what you / other people / programs were recently working on.
 ## ssh-permission-check
 
 You know when ssh refuses to do something because it doesn't like your permissions?
-This suggests chowns to fix that   (and a few restrictive things, just because)
+This suggests chmod commands to fix that   (and a few restrictive things, just because)
+(TODO: also consider chowns, in case you have the wrong owner)
 
 ```
     $ sudo ssh-permission-check
