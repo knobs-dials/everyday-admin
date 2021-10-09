@@ -1,96 +1,6 @@
+Various shell scripts I've made in the process of having sysadmin as a side job.
 
-
-## ssh-permission-check
-
-You know when ssh refuses to do something because it doesn't like your permissions?
-This suggests chowns to fix that   (and a few restrictive things, just because)
-
-```
-    $ sudo ssh-permission-check
-    chmod 750 '/root/.ssh'                  # currently: 770
-    chmod 600 '/root/.ssh/bridgetrust.pub'  # currently: 644
-    # Checked users: repository, root, tunneler
-```
-
-
-
-## renicer
-
-Wrapper that eases renice+ionice.
-Reads from /proc, /etc/passwd.
-
-Example use:
-
-``` 
- # renicer -l relion
-
-'relion_refine_m'  (PID 32439) matches
-  running:   'ionice -n 7 -p 32439'
-  running:   'renice -n 10 -p 32439'
-32439 (process ID) old priority 0, new priority 10
-
-'relion_refine_m'  (PID 32440) matches
-  running:   'ionice -n 7 -p 32440'
-  running:   'renice -n 10 -p 32440'
-32440 (process ID) old priority 0, new priority 10
-```
-
-
-
-## straceD
-
-Periodically checks for processes that are in D state (IOwait),
-straces them if they do so persistently, and stops once they behave.
-
-Meant a relatively automatic 'what programs are making my drives churn so hard / are bothered by this?' ...though has other uses.
-
-Defaults to only summarizing the calls (strace's -c parameter),
-because when disk contention happens, it tends to create a choir of processes
-and this gives you a little more hope at guessing which one was the cause.
-
-```
-# straceD
-Everything is behaving...
-Everything is behaving...
-Everything is behaving...
-Not stracing, probably a kernel process (PID 607, 'jbd2/sdc1-8')
-Starting to trace process (PID 26099, 'smartctl')
-smartctl(26098):
-smartctl(26099):
-smartctl(26098): strace: Process 26098 attached
-smartctl(26098): % time     seconds  usecs/call     calls    errors syscall
-smartctl(26098): ------ ----------- ----------- --------- --------- ----------------
-smartctl(26098):   0.00    0.000000           0        22           write
-smartctl(26098):   0.00    0.000000           0         1           close
-smartctl(26098):   0.00    0.000000           0         1           brk
-smartctl(26098):   0.00    0.000000           0         1           ioctl
-smartctl(26098): ------ ----------- ----------- --------- --------- ----------------
-smartctl(26098) end-of-strace
-Reader thread for smartctl(26098) finished
-Everything is behaving...
-Everything is behaving...
-```
-
-
-
-## strace-openedfiles
-
-Runs and straces a given command.
-For all open() calls that it does, prints unique existing filenames.
-
-Discards the command's stdout
-TODO: allow printing it on stderr instead, or logging it elsewhere.
-
-Also stats these files, and when they're large than 1MB prints LARGE,
-because this was written to see which files a grepalike was spending so much time on:
-```
-# strace-openedfiles  ag work_mem | grep ^LARGE
-LARGE /usr/lib/locale/locale-archive
-LARGE ./solardata/solar__.csv
-LARGE ./solardata/solar.sql
-```
-
-TODO: consider things that would be aliases (e.g. alias ag='ag --path-to-agignore ~/.agignore')
+Sorted roughly in order of how much I seem to actually use them.
 
 
 
@@ -98,19 +8,38 @@ TODO: consider things that would be aliases (e.g. alias ag='ag --path-to-agignor
 file-open-permissions
 ===
 
-Helper around chmod and chown that you can use recursively around directories.  For example,
+Helper that does chmod and chown, that you can use recursively around directories.  For example,
 
 ```
-   file-open-permissions --user uname --group gname .
+   file-open-permissions --user uname --group gname PATH
 ```
 ...is roughly equivalent to:
 
 ```
-   find . -type d -print0 | xargs -0 chown chmod ug+rwx
-   find . -type d -print0 | xargs -0 chown chmod o+rx
-   find . -type f -print0 | xargs -0 chown chmod ug+rw
-   find . -type f -print0 | xargs -0 chown chmod o+r
-   chmod uname:gname -R .
+   find PATH -type d -print0 | xargs -0 chown chmod ug+rwx,o+rx
+   find PATH -type f -print0 | xargs -0 chown chmod ug+rw,o+r
+   chmod uname:gname -R PATH
+```
+TODO: allow option to specifically include/exclude setting the directory we point to, not just its entries.
+
+
+
+## file-largest
+
+List the largest files under the given path(s).
+
+```
+    # file-largest /opt /tmp
+    Reading '/opt'...
+    Reading '/tmp'...
+    Done
+      100MB '/opt/google/chrome/chrome'
+      101MB '/opt/scipion-2016-01-30/.git/objects/pack/pack-043cf8c2d2435990ca2a8c6d489dd7c454eb29f0.pack'
+      104MB '/opt/scipion/.git/objects/pack/pack-f826a4cffb9f8afd8ade60c07d33a349d6ce4c28.pack'
+      124MB '/opt/PEET/ParticleRuntime/v84/sys/jxbrowser-chromium/glnxa64/chromium/libjxbrowser-chromium-lib.so'
+      177MB '/opt/PEET/ParticleRuntime/v84/bin/glnxa64/libnppi.so.6.0.37'
+      239MB '/opt/coot-Linux-x86_64-ubuntu-14.04-gtk2-python/libexec/coot-bin'
+      7.7GB '/opt/R2015b_glnxa64.iso'    
 ```
 
 
@@ -134,6 +63,48 @@ Helps find what you / other people / programs were recently working on.
 ```
 
 
+
+## ssh-permission-check
+
+You know when ssh refuses to do something because it doesn't like your permissions?
+This suggests chmod commands to fix that   (and a few restrictive things, just because)
+(TODO: also consider chowns, in case you have the wrong owner)
+
+```
+    $ sudo ssh-permission-check
+    chmod 750 '/root/.ssh'                  # currently: 770
+    chmod 600 '/root/.ssh/bridgetrust.pub'  # currently: 644
+    # Checked users: repository, root, tunneler
+```
+
+
+
+
+
+
+## strace-openedfiles
+
+Runs and straces a given command.
+For all open() calls that that command does, prints unique existing filenames.
+
+Discards the command's stdout (TODO: allow printing it on stderr instead, or logging it elsewhere)
+
+Also stats these files, and when they're large than 1MB prints LARGE,
+because this was written to see which files a grepalike was spending so much time on:
+```
+# strace-openedfiles  ag work_mem | grep ^LARGE
+LARGE /usr/lib/locale/locale-archive
+LARGE ./solardata/solar__.csv
+LARGE ./solardata/solar.sql
+```
+
+TODO: consider things that would be aliases (e.g. alias ag='ag --path-to-agignore ~/.agignore')
+
+
+## lsof-interesting
+
+lsof with a grep that filters out most not-really-file stuff.
+Verrry simple.
 
 
 ## otherpeople
@@ -194,11 +165,6 @@ Shows the diff between repository HEAD and local code
 
 
 
-## lsof-interesting
-
-lsof with a grep that filters out most not-really-file stuff.
-Verrry simple.
-
 
 
 ## file-caseclash
@@ -233,31 +199,12 @@ and that sit under a given directory.
 have not changed size/ctime in a while (currently hardcoded to ~10 seconds),
 and then will print them once and never again.
 
-I use this to compress incoming data on a server after it's fairly certain they are compete:
+I use this to compress incoming data on a server after it's fairly certain they are complete:
 
 ```
    file-stable '*.dat' /data/archive | xargs -t -n 1 -P 3 pigz -3
 ```
 
-
-
-## file-largest
-
-List the largest files under the given path(s).
-
-```
-    # file-largest /opt /tmp
-    Reading '/opt'...
-    Reading '/tmp'...
-    Done
-      100MB '/opt/google/chrome/chrome'
-      101MB '/opt/scipion-2016-01-30/.git/objects/pack/pack-043cf8c2d2435990ca2a8c6d489dd7c454eb29f0.pack'
-      104MB '/opt/scipion/.git/objects/pack/pack-f826a4cffb9f8afd8ade60c07d33a349d6ce4c28.pack'
-      124MB '/opt/PEET/ParticleRuntime/v84/sys/jxbrowser-chromium/glnxa64/chromium/libjxbrowser-chromium-lib.so'
-      177MB '/opt/PEET/ParticleRuntime/v84/bin/glnxa64/libnppi.so.6.0.37'
-      239MB '/opt/coot-Linux-x86_64-ubuntu-14.04-gtk2-python/libexec/coot-bin'
-      7.7GB '/opt/R2015b_glnxa64.iso'    
-```
 
 
 
@@ -268,6 +215,18 @@ or stale (much older than the real file alongside).
 
 This looks for them, checks that they're not recent, and reports and optionally removes them.
 
+
+
+## file-readin
+
+Reads a file. So that it's in the page cache.
+(note: you may care to know about the vmtouch utility)
+
+```
+    # readin -w png -w jpg -r /data/images
+    Reading: /data/images/eb8f2be459aad473b5dd64680d78b810ddf2a8cf.jpg
+    Reading: /data/images/bdff38ce75cbbd76803c4e25478faa64553d0b08.jpg  
+```
 
 
 ## file-summarize-extensions
@@ -311,17 +270,6 @@ I mostly use this as a more targeted variant of file-summarize-extensions
     121MiB / 127MB  (127194089 bytes)  in 15 files
 ```
 
-
-## file-readin
-
-Reads a file. So that it's in the page cache.
-(note: you may care to know about the vmtouch utility)
-
-```
-    # readin -w png -w jpg -r /data/images
-    Reading: /data/images/eb8f2be459aad473b5dd64680d78b810ddf2a8cf.jpg
-    Reading: /data/images/bdff38ce75cbbd76803c4e25478faa64553d0b08.jpg  
-```
 
 
 ## file-estimate-homediruse
