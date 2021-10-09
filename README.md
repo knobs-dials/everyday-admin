@@ -85,10 +85,9 @@ This suggests chmod commands to fix that   (and a few restrictive things, just b
 ## strace-openedfiles
 
 Runs and straces a given command.
-For all open() calls that it does, prints unique existing filenames.
+For all open() calls that that command does, prints unique existing filenames.
 
-Discards the command's stdout
-TODO: allow printing it on stderr instead, or logging it elsewhere.
+Discards the command's stdout (TODO: allow printing it on stderr instead, or logging it elsewhere)
 
 Also stats these files, and when they're large than 1MB prints LARGE,
 because this was written to see which files a grepalike was spending so much time on:
