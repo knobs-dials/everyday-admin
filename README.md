@@ -1,4 +1,4 @@
-Various shell scripts I've made in the process of having sysadmin as a side job.
+Various scripts made in the process of being a sysadmin.
 
 Sorted roughly in order of how much I seem to actually use them.
 
@@ -147,6 +147,18 @@ Tries to summarize what various people are up to
 
 
 
+## file-readin
+
+Reads a file. So that it's in the page cache.
+(note: you may care to know about the vmtouch utility)
+
+```
+    # readin -w png -w jpg -r /data/images
+    Reading: /data/images/eb8f2be459aad473b5dd64680d78b810ddf2a8cf.jpg
+    Reading: /data/images/bdff38ce75cbbd76803c4e25478faa64553d0b08.jpg  
+```
+
+
 
 
 ## file-caseclash
@@ -197,18 +209,6 @@ or stale (much older than the real file alongside).
 
 This looks for them, checks that they're not recent, and reports and optionally removes them.
 
-
-
-## file-readin
-
-Reads a file. So that it's in the page cache.
-(note: you may care to know about the vmtouch utility)
-
-```
-    # readin -w png -w jpg -r /data/images
-    Reading: /data/images/eb8f2be459aad473b5dd64680d78b810ddf2a8cf.jpg
-    Reading: /data/images/bdff38ce75cbbd76803c4e25478faa64553d0b08.jpg  
-```
 
 
 ## file-summarize-extensions
