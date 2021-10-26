@@ -1,4 +1,4 @@
-Various scripts made in the process of being a sysadmin.
+Various scripts made in the process of being a sysadmin, that are too random to get their own repository.
 
 Sorted roughly in order of how much I seem to actually use them.
 
