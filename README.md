@@ -4,48 +4,6 @@ Sorted roughly in order of how much I seem to actually use them.
 
 
 
-
-file-open-permissions
-===
-
-Helper that does chmod and chown, that you can use recursively around directories.  For example,
-
-```
-   file-open-permissions --user uname --group gname PATH
-```
-...is roughly equivalent to:
-
-```
-   find PATH -type d -print0 | xargs -0 chown chmod ug+rwx,o+rx
-   find PATH -type f -print0 | xargs -0 chown chmod ug+rw,o+r
-   chmod uname:gname -R PATH
-```
-
-Arguments:
-```
-Usage:  Usage: file-open-permissions [options]
-
-Options:
-  -h, --help            show this help message and exit
-  -n, --noother         Don't also open up world ('other') permissions
-  -d, --dry-run         Only report what we would change, but don't do it.
-  -q, --quiet           Don't mention every change we do
-  -v, --verbose         Be a little more verbose
-  -g GROUP, --group=GROUP
-                        Change ownership to group name (default is not to
-                        change)
-  -u USER, --user=USER  Change ownership to user name (default is not to
-                        change)
-```
-
-
-TODO: 
-- allow parameter to control of what to open/set
-- allow option to specifically include/exclude setting the directory we point to, not just its entries.
-
-
-
-
 ## file-largest
 
 List the largest files under the given path(s).
