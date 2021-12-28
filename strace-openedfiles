@@ -1,15 +1,15 @@
-#!/usr/bin/python
-'''
-For all open() calls that strace mentions,
-prints unique existing filenames.
+#!/usr/bin/python3
+''' For all open calls that strace mentions,
+    prints unique existing filenames.
 
-Discards the command's stdout (CONSIDER: put it on stderr)
+    Discards the command's stdout (CONSIDER: put it on stderr)
 
 
-Also checks whether these files are larger than 1MB,
-which is because this was written for something like
-  strace-openedfiles ag work_mem
-...to see whether it's reading any larrge files it shouldn't
+    Also checks whether these files are larger than 1MB,
+    which is because this was written for something like
+    strace-openedfiles ag work_mem | grep LARGE
+    ...to see whether it's reading any large files we can avoid
+
 '''
 
 import sys
@@ -17,43 +17,77 @@ import os
 import re
 import subprocess
 
+#from optparse import OptionParser
+#p = OptionParser() # Has some options, but we're ignoring them here
+#
+#p.add_option("-s", "--size-threshold", dest="threshold",    default='1000000',  help=".") 
+#
+#options, args = p.parse_args()
+#if len(args)==0:
+#    print( "Needs a command to run" )
+#    sys.exit(-1)
+       
+
+
+
 DEVNULL = open(os.devnull, 'w')
 
 cmd = ['strace',
            '-f', # also child processes, in case something uses them as workers
-           '-e', 'trace=open',
+           #'-e', 'trace=file,chdir,getcwd',
            #'bash', '-c', ' '.join(sys.argv[1:])
            ] + sys.argv[1:]
 
     
-print "Will run %r"%cmd
+print( "Will run %r"%cmd )
 
-p = subprocess.Popen( cmd, stdout=DEVNULL,
-                           stderr=subprocess.PIPE )
+p = subprocess.Popen( cmd, stdout=DEVNULL, stderr=subprocess.PIPE, encoding='utf8' )
+
+def ignore_filename(s):
+    #return False
+    if '/lib/' in s: # e.g. libc, locale stuff
+        return True
+    if s.startswith('/proc'):
+        return True
+    return False
+
 
 mentioned_paths = {}
 
 while True:
-      line = p.stderr.readline()
-      if len(line)==0: # EOF
-          break
-      m = re.search(r'[(]"(.*?)"[,)] ', line)
-      if m:
-          filename = m.groups()[0]
-          if not filename.startswith('/lib/') and not filename.startswith('/proc/'):
-              if filename not in mentioned_paths:
-                  mentioned_paths[filename] = True
-                  
-                  if os.path.isfile(filename): # implicitly ignores non-existing
-                      try:
-                          stob = os.stat(filename) # (stat not fstat, size of symlinked object if applicable)
-                          #print stob.st_size
+    line = p.stderr.readline()
+    print( line )
+    if len(line)==0: # EOF from subprocess
+        break
 
-                          if stob.st_size > 1000*1000:
-                              print 'LARGE',filename
-                          else:
-                              print filename
-                      except Exception, e:
-                          print e
-                          pass
-                      
+    m = re.search(r'open[a-z]*[(][^"]+"(.*?)"[,)]', line)   # (aimed at open, openat) TODO: check variations, this might still be under-accepting 
+    if m:
+        print('%r %r'%( m.groups(), line) )
+        filename = m.groups()[0]
+        if not ignore_filename(filename):
+            if filename in mentioned_paths:
+                pass
+                #print("already mentioned %r"%filename)
+            else:
+                mentioned_paths[filename] = True
+                
+                
+                if os.path.isfile(filename): # implicitly ignores non-existing
+                    try:
+                        stob = os.stat(filename) # (stat not fstat, size of symlinked object if applicable)
+                        #print stob.st_size
+
+                        if stob.st_size > 0*1000*1000:
+                            print( 'OPENED LARGE %4dMB: %s'%(stob.st_size/(1024*1024), filename) )
+                        else:
+                            print( 'OPENED: %s'%filename )
+
+                    except Exception as e:
+                        raise
+                        print( e )
+                        pass
+                else: #most opens will be relative, so...
+                    print("CANTFIND %r"%filename)
+                    
+        else:
+            print( "IGNORE %r"%filename )
