@@ -62,24 +62,6 @@ This suggests chmod commands to fix that   (and a few restrictive things, just b
 
 
 
-## strace-openedfiles
-
-Runs and straces a given command.
-For all open() calls that that command does, prints unique existing filenames.
-
-Discards the command's stdout (TODO: allow printing it on stderr instead, or logging it elsewhere)
-
-Also stats these files, and when they're large than 1MB prints LARGE,
-because this was written to see which files a grepalike was spending so much time on:
-```
-# strace-openedfiles  ag work_mem | grep ^LARGE
-LARGE /usr/lib/locale/locale-archive
-LARGE ./solardata/solar__.csv
-LARGE ./solardata/solar.sql
-```
-
-TODO: consider things that would be aliases (e.g. alias ag='ag --path-to-agignore ~/.agignore')
-
 
 ## lsof-interesting
 
