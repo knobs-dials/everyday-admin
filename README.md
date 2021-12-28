@@ -200,7 +200,7 @@ Helps answer questions like
 
 ## file-totalsize
 
-Takes a list of files on stdin, sums their size and count.
+Takes a list of files on stdin, stats them and sums their size and count.
 
 I mostly use this as a more targeted variant of file-summarize-extensions
 
