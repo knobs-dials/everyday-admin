@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 '''
      Get a basic idea of what other people are doing on a host
 
@@ -15,7 +15,7 @@ import pwd
 def procs_via_ps( root_too=False):
     ''' geared to report things that use CPU or memory '''
     # TODO: force specific output from ps
-    p = subprocess.Popen("ps --no-header -eo uid,user,pid,%cpu,%mem,state,comm",shell=True, stdout=subprocess.PIPE)
+    p = subprocess.Popen("ps --no-header -eo uid,user,pid,%cpu,%mem,state,comm",shell=True, stdout=subprocess.PIPE, encoding='utf8')
     out,_ = p.communicate()
 
     d={}
@@ -36,6 +36,12 @@ def procs_via_ps( root_too=False):
         if '<defunct>' in cmd:
             cmd=cmd.replace('<defunct>','').rstrip()
 
+            
+        # CONSIDER: summarize into named categories (make the following a map), ''then'' decide whether to hide or not
+        # TODO: put this on '--summarize' parameter
+        cmd = categorize_cmd(cmd,1,1)
+        
+        
         up='%s//%s'%(uid,cmd)
         if up not in user_and_procname_to_pids:
             user_and_procname_to_pids[up]=[pid]
@@ -78,7 +84,6 @@ def dirs_via_lsof(cwd_only=True, pids=None):
          CONSIDER: use something like -Fntf0 for more robustness
     '''
     lsof_DIR={} # pid -> opendirs
-    import subprocess
 
     lsof_DIR={}
 
@@ -98,7 +103,7 @@ def dirs_via_lsof(cwd_only=True, pids=None):
         cmd.extend(['-p',pidstr])
 
     t=time.time()
-    o=subprocess.Popen(cmd, stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    o=subprocess.Popen(cmd, stdout=subprocess.PIPE,stderr=subprocess.PIPE, encoding='utf8')
     out,err = o.communicate()
     t=time.time()-t
     #print "Running lsof took %.3fsec"%t
@@ -153,6 +158,8 @@ states={ 'X':0,  'Z':1,
          'I':4,
          'D':5,
 }
+
+
 
 hide_if_lowresource=[
     # don't list boring stuff unless it's doing something intersting:
@@ -322,6 +329,154 @@ hide_if_lowresource_startswith = [
 
 
 
+def starts_with_one_of(s, stringlist): # TODO: change to regexp so I can more easily express  whole name ,startswith, word-boundary, and such
+    for test in stringlist:
+        if s.startswith(test):
+            return True
+    return False
+
+
+
+def categorize_cmd(cmd:str, merge_databases=False, merge_services=False):
+    """ This is based on pragmatism
+        - group lots of small kernel stuff
+
+        Takes str, or bytes (if bytes, assumes we can decode as utf8)
+    """ 
+    if type(cmd) is bytes:
+        cmd = cmd.decode('utf8')
+
+    if starts_with_one_of(cmd, (
+        'systemd-',
+        '(sd-pam)',
+        'journalctl',
+        )):
+        return '(systemd)'
+    
+    # These are more useful when kept separate
+    if merge_databases and starts_with_one_of(cmd, (
+        'postgres', 
+        'mysql',
+        'rabbitmq', 'beam.smp',
+        'mosquitto',
+        'memcached',
+        )):  # useful to keep separate, though
+        return '(database)'
+
+    if starts_with_one_of(cmd, (# drivery stuff
+                                'oom_reaper','rcuos', 'rcu_', 'kworker', 'ksoftirqd', 'kthreadd', 'migration', 'watchdog',
+                                'khelper', 'kdevtmpfs', 'kworker', 'irq/', 'cpuhp/', 'khungtaskd', 'khugepaged',
+                                'kcompactd',
+                                'irqbalance', 'devfreq', 'mm_percpu_wq',
+                                'kstrp',
+                                'edac-', 'acpid', 'acpi_',
+                                'nv_queue',
+                                'ttm_swap',
+                                'ksmd',
+                                #'nvidia-',
+
+                                # support stuff
+                                'init','getty', 'upstart', 'rsyslog', 'syslog',
+                                'kauditd', 'polkitd', # security stuff 
+                                'packagekitd', 'unattended-','cleanupd', #update stuff
+                                'runsv', 'runsvdir', 'my_init', # inside containers, probably
+
+                                'accounts-daemon', # look up properly
+                                'xprtiod', # look up properly
+                                'unattended-',
+
+    )):
+        return '(kernel+system)'
+
+    if starts_with_one_of(cmd, (
+        # filesystem-supporting processes
+        'z_', 'zvol', 'zfs_', 'arc_', 'l2arc_', 'txg_', 'zil_', 'dp_zil_', 'dp_sync_', 'dbu_evict','dbuf_evict', 'metaslab_group',
+        'zed',
+        'spl_',
+        'ext4', 'ecryptfs', 'lvmetad',
+        'jbd2', 'xfsmalloc','xfsalloc','xfs_', 'jfsIO','jfsSync','jfsCommit','jfscommit',
+        # more directly related to disk IO
+        'scsi', 'ata_', 'kswap', 'fsnotify',  'writeback', 'kblockd', 'kthrotld', 'kintegrityd', 'raid5wq',
+
+        'smartd',
+        'udisksd',
+        'loop0', 'loop1',
+
+        'crypto', #practically
+        )):
+        return '(io+filesystem)'
+
+    if starts_with_one_of(cmd, (
+        'agetty',
+        'atd', 'cron', #'anacron',
+        'runsv','runsvdir',
+        'nvidia-',
+        'fancontrol',
+
+        'dbus-', # arguable
+
+        'charger_manager',
+
+        )):
+        return '(local-services)'
+
+    if merge_services and starts_with_one_of(cmd, (
+        'ipv6_addrconf',
+        'wpa_supplicant', 'cfg80211',
+
+        'networkd-',
+
+        'inetutils-inetd',
+        'rpc.', 'rpcbind', 'rpciod'
+        'ntpd',
+
+        'smbd',
+        'cups', 'lpqd',
+        'nfsd', 'xprtiod', 'blkmapd',
+        'lockd',
+        'rpc.', 'rpcbind', 'rpciod',
+
+        'tmux', 'screen',
+        'avahi-d',
+
+        #'sshd', # commented, this is something I want to know separately
+
+        'seaf',
+        'apache', 'htcacheclean',
+        'nginx',
+
+        'networkd-',
+        'winbindd',
+        'rpc.idmapd',
+        'rpc.mountd',
+        'rpciod',
+        'rpcbind',
+        'cupsd',
+        'cups-',
+        'epmd',
+        'lpqd',
+        'nfsd', 'blkmapd',
+        'smbd',
+
+        'pickup',
+
+        'munin-node',
+        )):
+        return '(network-services)'
+
+    elif starts_with_one_of(cmd, ('UVM ', 'docker', 'iprt-', 'containerd', 'VBox')):
+        return '(vm+container)'
+
+    elif starts_with_one_of(cmd, ('gnome-', 'gvfs-', 'gvfsd-', 'gsd-','gdm', 'at-spi', 'colord', 'gdostep', 'gdomap',
+                                 #'gvfs' # maybe include GUI-supporting stuff in this too?     also e.g. dbuf?
+                                 )):
+        return '(gui)'
+
+    if '/' in cmd:
+        cmd = cmd.split('/')[-1]
+
+    return cmd
+
 def main():
     # TODO: put root_to under a command line argument
     root_too = 1
@@ -342,10 +497,11 @@ def main():
         user = username_by_uid(uid)
         printed_user_yet = False
 
-        pl = list(procs_for_uid[uid].iteritems())
-        pl.sort(lambda a,b: cmp(a[1],b[1]))
+        pl = list(procs_for_uid[uid].items())
+        pl.sort(key=lambda x: x[1])
         cmdcount = {}
         for pid,cmd in pl:
+            
             if cmd not in cmdcount:
                 cmdcount[cmd]  = 1
             else:
@@ -353,10 +509,10 @@ def main():
 
 
         if len(cmdcount)>0:
-            ccc = cmdcount.items()
-            ccc.sort(lambda a,b: cmp(b[1],a[1])) # descending by count
+            ccc = list(cmdcount.items())
+            ccc.sort(key=lambda x: x[1], reverse=True) # descending by count
             
-            for cmd,cnt in ccc:
+            for cmd,cnt in ccc:        
                 paths       = set()
                 noprint     = False
                 total_cpu   = 0.
@@ -450,33 +606,33 @@ def main():
 
                 ####
                 if not printed_user_yet:
-                    print
-                    print user
+                    print('')
+                    print( user)
                     #print "UID %s is %r"%(uid,user)
                     printed_user_yet=True
-                print ps
+                print( ps)
 
 
     if os.geteuid()==0: # root
-        print 
-        print 
+        print ('')
+        print ('')
 
         if 0:
             print
-            p=subprocess.Popen("/bin/netstat -plant | grep 'sshd:'", shell=True, stdout=subprocess.PIPE)
+            p=subprocess.Popen("/bin/netstat -plant | grep 'sshd:'", shell=True, stdout=subprocess.PIPE, encoding='utf8')
             out,_ = p.communicate()
             if len(out.strip())>0:
-                print "SSH network connections to us:"
-                print '    '+ '\n    '.join(out.splitlines())
+                print( "SSH network connections to us:")
+                print( '    '+ '\n    '.join(out.splitlines()))
             print
 
         if 0:
-            print
-            print "Logins's working directories:"
-            p=subprocess.Popen("lsof 2>/dev/null | grep bash | grep cwd", shell=True, stdout=subprocess.PIPE)
+            print('')
+            print( "Logins's working directories:")
+            p=subprocess.Popen("lsof 2>/dev/null | grep bash | grep cwd", shell=True, stdout=subprocess.PIPE, encoding='utf8')
             out,_ = p.communicate()
             if len(out.strip())>0:
-                print '    '+ '\n    '.join(out.splitlines())
+                print( '    '+ '\n    '.join(out.splitlines()))
 
 
 
