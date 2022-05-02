@@ -13,6 +13,81 @@ import stat
 import math
 
 
+def sfloat(f,        fixedwidth=10, aligndigit=4, removetrail=1,  digits=None,             extradigits=0,           estyleabove=100000):
+    ''' Idea: when studying a screen full of numbers,
+              show only one or two significant digits at any scale
+              to make for easily skimmable figures by having 
+                their length, and alignment, indicate their scale.
+    '''
+    if type(fixedwidth) in (int, #long,
+                                float):
+        fixedwidth=str(int(fixedwidth))
+        
+    af = abs(f)
+    if af>estyleabove:
+        ret= '%.1e'%f # '6.1e+07' style (in part to keep it shortinsh so that fixedwith makes sense)
+        removetrail=0 # there's a digit before the e and there may be a trailing 0, but we don't want that removed.
+
+    else: 
+        if 0: # could do something clever here, say...
+            digits = max(0,round( 1.+0.5*-math.log(af) ))
+            # (still needs a af=max(af,machine_epsilon, or a test.)
+        else: # but this is easier to understand and tweak
+            if digits is None:
+                if   af == 0.:      digits = 0
+                elif af < .00001:   digits = 7
+                elif af < .0001:    digits = 6
+                elif af < .001:     digits = 5
+                elif af < .01:      digits = 4
+                elif af < .1:       digits = 3
+                elif af < .5:       digits = 3
+                elif af < 7:        digits = 2
+                elif af < 100:      digits = 1
+                elif af < 1000:     digits = 0
+                else:               digits = 0    # higher? show as integer
+
+        digits += extradigits
+        digits  = max(0,digits) # negative extradigits can make that happen
+
+        ret = ('%% .%df'%digits)%f
+
+        if removetrail: # remove trailing zeroes, and a dot if it's there afterwards
+            if '.' in ret:
+                while ret.endswith('0'):
+                    ret=ret[:-1]
+            if ret.endswith('.'):
+                ret=ret[:-1]
+        
+    if aligndigit:
+        if 'e' in ret:
+            epos = ret.rindex('e')
+            pos_after_e = len(ret)-epos-2
+            aligndigit-=1
+            if pos_after_e<aligndigit:
+                ret+=' '*(aligndigit-pos_after_e) 
+        elif '.' in ret:
+            aligndigit+=1 # cheat for off by 1
+            dpos = ret.rindex('.')
+            pos_after_dot = len(ret)-dpos
+            #print 'positions after dot:',pos_after_dot
+            aligndigit-=1
+            if pos_after_dot<aligndigit:
+                ret+=' '*(aligndigit-pos_after_dot) 
+        else:
+            aligndigit+=1 # cheat for off by 1
+            i=len(ret)-1
+            while ret[i]==' ':
+                i-=1               
+            final_spaces = len(ret)-i
+            #print 'final spaces:',final_spaces
+            if final_spaces<aligndigit:
+                ret+=' '*(aligndigit-final_spaces)
+            
+    if fixedwidth:
+        ret = ('%% %ss'%fixedwidth)%ret
+            
+    return ret
+
 
 def kmg(bytes,kilo=1000, append='',thresh=15,rstrip0=1, extradigits=0):
     """ Readable size formatter
