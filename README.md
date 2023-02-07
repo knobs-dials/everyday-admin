@@ -1,6 +1,8 @@
 Various scripts made in the process of being a sysadmin, that are too random to get their own repository.
 
-Sorted roughly in order of how much I seem to actually use them.
+Sorted roughly in order of how much I seem to actually use them. 
+
+Most are very dumb and singular, and that's often the point.
 
 
 
