@@ -5,6 +5,9 @@ Sorted roughly in order of how much I seem to actually use them.
 Most are very dumb and singular, and that's often the point.
 
 
+In space cleanup, you may also find https://github.com/scarfboy/file-count and https://github.com/scarfboy/duppy useful
+
+
 
 ## file-largest
 
@@ -24,7 +27,6 @@ List the largest files under the given path(s).
       7.7GB '/opt/R2015b_glnxa64.iso'    
 ```
 
-You may also find https://github.com/scarfboy/file-count useful
 
 
 ## file-recent
