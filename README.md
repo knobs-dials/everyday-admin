@@ -206,7 +206,7 @@ Helps answer questions like
 
 ## file-totalsize
 
-Takes a list of files on stdin, stats them and sums their size and count.
+Takes a list of filenames on stdin, stats them and sums their size and count.
 
 I mostly use this as a more targeted variant of file-summarize-extensions
 
@@ -219,6 +219,8 @@ I mostly use this as a more targeted variant of file-summarize-extensions
     # find /data/images -iname '*.jp*' | egrep ^DSC | file-totalsize
     121MiB / 127MB  (127194089 bytes)  in 15 files
 ```
+
+TODO: report both apparent and disk usage.
 
 
 
