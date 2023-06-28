@@ -156,9 +156,10 @@ a bit of backoff time is useful.
 
 Meant to feed things to xargs, in that it checks that files
 that match a given shellglob, 
-and that sit under a given directory.
-have not changed size/ctime in a while (currently hardcoded to ~10 seconds),
-and then will print them once and never again.
+that sit under a given directory,
+have not changed size/ctime in a while (currently hardcoded to ~10 seconds).
+
+Once that's all true it prints their path once and never again.
 
 I use this to compress incoming data on a server after it's fairly certain they are complete:
 
