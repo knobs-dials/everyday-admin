@@ -79,7 +79,7 @@ Verrry simple.
 Tries to summarize what various people are up to 
 * shows process names -- and filters out boring stuff, particularly for root
 * shows working dir for shells (and some others)
-* CPU / wait state if worth mentioning
+* mentions nontrivial CPU / wait state 
 
 ```
     # otherpeople
