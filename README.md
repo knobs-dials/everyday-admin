@@ -161,7 +161,8 @@ have not changed size/ctime in a while (currently hardcoded to ~10 seconds).
 
 Once that's all true it prints their path once and never again.
 
-I use this to compress incoming data on a server after it's fairly certain they are complete:
+I use this to compress data that's being copied into a storage server, 
+as a more informed backoff so that it's surer to be done copying:
 
 ```
    file-stable '*.dat' /data/archive | xargs -t -n 1 -P 3 pigz -3
