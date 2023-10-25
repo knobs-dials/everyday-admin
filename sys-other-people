@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 '''
      Get a basic idea of what other people are doing on a host
-
 '''
 
 import sys
