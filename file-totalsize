@@ -1,12 +1,10 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 '''
     Takes a list of filenames, sums their sizes 
     Meant as a tool to stick on the end of find and grep
 '''
 
-import sys
-import os
-import optparse
+import sys, os, optparse
 
 
 def kmg(bytes,kilo=1000, append='',thresh=15,rstrip0=1):
@@ -101,16 +99,16 @@ if __name__ == '__main__':
             stob = os.stat(infile)
             size += stob.st_size
             successes += 1
-        except Exception, e:
+        except Exception as e:
             # maybe separate out 'not found' from others?
             #print 'ERROR',e,repr(infile)
             errors += 1
-    print "%siB / %sB  (%d bytes)  in %d files"%( kmg(size, kilo=1024), 
+    print( "%siB / %sB  (%d bytes)  in %d files"%( kmg(size, kilo=1024), 
                                                   kmg(size, kilo=1000), 
                                                   size, 
-                                                  successes),
+                                                  successes), end='')
     if errors>0:
-        print " (%d access errors)"%errors
+        print( " (%d access errors)"%errors)
     else:
-        print ""
+        print( "")
     

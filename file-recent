@@ -1,5 +1,4 @@
-#!/usr/bin/python
-
+#!/usr/bin/python3
 '''
 Note that:
  alias recent_files="find . -type f -printf '%TY-%Tm-%Td %TT %p\n' | sort"
@@ -81,6 +80,7 @@ def kmg(bytes,kilo=1000, append='',thresh=15,rstrip0=1):
         
     return ret
 
+
 def nicetimelength(sec, long=False, joinon=' ', parts=2):
     """ Takes a relative amount of time (seconds as float/int, or a timedelta)
         Returns a string describing that is human terms
@@ -118,16 +118,10 @@ def nicetimelength(sec, long=False, joinon=' ', parts=2):
             else: # short form
                 ret.append('%2d%-3s'%(howmany,shorts))
     if left>0.:
-        if roundme:
-            if long:
-                ret.append( '%d seconds'%(left) )
-            else:
-                ret.append( '%dsec'%(left) )
+        if long:
+            ret.append( '%d seconds'%(left) )
         else:
-            if long:
-                ret.append( '%s seconds'%(sfloat(left,fixedwidth='')) )
-            else:
-                ret.append( '%ssec'%(sfloat(left,fixedwidth='', digits=2)) )
+            ret.append( '%dsec'%(left) )
                         
     return joinon.join(ret[:parts])
 
@@ -189,25 +183,25 @@ def walk_and_print(paths, recursive, what,amount=None, future=True, dirs=False, 
                             sys.stdout.write(''.join(line))
                             sys.stdout.flush()
                         else:
-                            results.append
+                            results.append( (size, ''.join(line)) )
                     else:
                         raise ValueError("Don't know type %r"%what_type)
                                 
                                                                                                 
             if sort:
-                results.sort(lambda a,b: cmp(b[0],a[0]))
+                results.sort(key = lambda x:x[0])
                 
                 if amount:
-                    results=results[-int(amount):]
+                    results = results[-int(amount):]
                     
-                for dt, line in results:
+                for sortkey, line in results:
                     sys.stdout.write(line)
                     sys.stdout.flush()
 
     except KeyboardInterrupt:
         #if use_color:
         #    print sc.RESET
-        print "\nStopping"
+        print( "\nStopping")
         #if use_color:
         #    print sc.RESET
 
@@ -366,9 +360,13 @@ def main():
     #sys.stderr.write('.\n')
     sys.stderr.flush()
 
+    ERASEDISP    = '\x1b[2J'
+    GOTO00       = '\x1b[;H'
+    CLEARSCREEN  = ERASEDISP + GOTO00
+
     if options.watch:
         while True:
-            print CLEARSCREEN
+            print( CLEARSCREEN )
             walk_and_print(paths,recursive,what,
                            amount       = options.amount,
                            future       = options.future,
@@ -378,7 +376,6 @@ def main():
                            sort         = options.sort,
                            )
             time.sleep(10)
-            #print '-'*60
     else:    
         walk_and_print(paths,recursive,what,
                        amount=options.amount,

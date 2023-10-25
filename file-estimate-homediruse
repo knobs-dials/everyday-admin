@@ -1,5 +1,4 @@
-#!/usr/bin/python
-
+#!/usr/bin/python3
 '''
 Summarizes each user's homedir - used space, recent files.
 
@@ -69,7 +68,7 @@ def sfloat(f,        fixedwidth=10, aligndigit=4, removetrail=1,  digits=None,  
             aligndigit+=1 # cheat for off by 1
             dpos = ret.rindex('.')
             pos_after_dot = len(ret)-dpos
-            #print 'positions after dot:',pos_after_dot
+            #print( 'positions after dot:',pos_after_dot)
             aligndigit-=1
             if pos_after_dot<aligndigit:
                 ret+=' '*(aligndigit-pos_after_dot) 
@@ -79,7 +78,7 @@ def sfloat(f,        fixedwidth=10, aligndigit=4, removetrail=1,  digits=None,  
             while ret[i]==' ':
                 i-=1               
             final_spaces = len(ret)-i
-            #print 'final spaces:',final_spaces
+            #print( 'final spaces:',final_spaces)
             if final_spaces<aligndigit:
                 ret+=' '*(aligndigit-final_spaces)
             
@@ -236,12 +235,12 @@ for line in passwd:
 
             # Looks real enough, start reporting this homedir
 
-            print 
+            print()
 
             username = l[0] 
-            print 'User %r'%username
+            print( 'User %r'%username)
             if username in whitelist_users:
-                print '  is whitelisted'
+                print( '  is whitelisted')
                 continue
 
             
@@ -249,10 +248,10 @@ for line in passwd:
             
             homedir = os.path.expanduser('~%s'%username).rstrip('/')
             if not os.path.exists(homedir):
-                print '  INFO: homedir %s does not exist. Not a real user? Moved?'%homedir
+                print( '  INFO: homedir %s does not exist. Not a real user? Moved?'%homedir)
             else:
                 if not os.access(homedir, os.R_OK):
-                    print '  WARNING:  Could not read homedir %r -- are we running as root?'%homedir
+                    print( '  WARNING:  Could not read homedir %r -- are we running as root?'%homedir)
                     continue
 
                 showfiles=[]
@@ -270,7 +269,7 @@ for line in passwd:
                         dl=[]
                         for e in ds:
                             if e.startswith('.'):
-                                #print "[ %-12s ]  ignoring dot-dir %r"%(username,e)
+                                #print( "[ %-12s ]  ignoring dot-dir %r"%(username,e))
                                 dl.append(e)
                                 ignored+=1
                         for de in dl:
@@ -279,7 +278,7 @@ for line in passwd:
                     for fn in fs:
                         if quick_dirty:
                             if fn.startswith('.'): # ignore hidden files (slightly more dangerous)
-                                #print '[ %-12s ]  ignoring dotfile %r'%(username,fn)
+                                #print( '[ %-12s ]  ignoring dotfile %r'%(username,fn))
                                 ignored+=1
                                 continue
 
@@ -314,23 +313,18 @@ for line in passwd:
                             errors+=1
 
                 if ignored>0:
-                    print '  INFO: Ignored %s hidden files/dirs'%(ignored)
+                    print( '  INFO: Ignored %s hidden files/dirs'%(ignored))
                 if errors>0:
-                    print '  WARNING: Could not check %d files'%(errors)
+                    print( '  WARNING: Could not check %d files'%(errors))
 
-                print '  INFO: Size:          %sB'%(kmg(fsizeby))
-                print '  INFO: Youngest file: %s'%nicetimelength(youngest)
-                #print '  INFO: Average age:   %s (keep in mind that software may have old timestamps)'%nicetimelength(avgage/avgcount)
+                print( '  INFO: Size:          %sB'%(kmg(fsizeby)))
+                print( '  INFO: Youngest file: %s'%nicetimelength(youngest))
+                #print( '  INFO: Average age:   %s (keep in mind that software may have old timestamps)'%nicetimelength(avgage/avgcount))
 
-                #showfiles.sort(lambda a,b: cmp(a[0],b[0])) # age, ascending
-                def sorter(a,b):
+                def sortkey(a):
                     ' tries to bias towards things both large and recent (more likely to be interesting data files)'
-                    aa = min(1.0, a[0]/year )   # since we have a policy for a month (in theory), a year seems like a lot
-                    ab = min(1.0, b[0]/year ) 
-                    sa = 1. / math.log( a[2], 100000) # this is probably the easiest to tweak
-                    sb = 1. / math.log( b[2], 100000) # if you want to weigh size more or less
-                    return cmp(aa*sa,ab*sb)
-                showfiles.sort(  sorter  )
+                    return  min(1.0, a[0]/year )  *  (1. / math.log( a[2], 100000) ) # this is probably the easiest to tweak
+                showfiles.sort(  key=sortkey  )
                 
                 printme = []
                 if len(showfiles)>0:
@@ -345,11 +339,11 @@ for line in passwd:
                             if shown_files>show_file_amt:
                                 break
                 if len(printme)>0:
-                    print '  Some of the larger and recent files: '
+                    print( '  Some of the larger and recent files: ')
                     for line in printme:
-                        print line
+                        print( line)
                 else:
-                    print '  No recently modified files. ' 
+                    print ('  No recently modified files. ' )
 
 
-print
+print()

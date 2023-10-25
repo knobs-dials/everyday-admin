@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 """ Checks under given directories 
     for file and directory entries that will be confusing to case-insensitive filesystem APIs (such as windows's)
 """
@@ -29,9 +29,9 @@ for arg in args:
             if len(entries)>1:
                 if not printed_this_dir:
                     printed_this_dir = True
-                    print "# Issues under %r"%indir
+                    print( "# Issues under %r"%indir)
                 for i,entry in enumerate(entries):
                     entry_abs = os.path.join(indir,entry)
-                    print "  %r"%entry_abs
-                print
+                    print( "  %r"%entry_abs)
+                print()
                 

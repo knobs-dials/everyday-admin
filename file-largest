@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import os
 import sys
@@ -78,23 +78,22 @@ def kmg(bytes,kilo=1000, append='',thresh=15,rstrip0=1, extradigits=0):
 
 data = [] # list of (size, filename)
 
-print "Reading...",
+print( "Reading...", end='')
 cnt=0
 for path in sys.argv[1:]:
     for r,ds,fs in os.walk(path):
     	for fn in fs:
             ffn = os.path.join( r, fn )
             mode, inode, device, numhardlinks, uid,gid, size, atime, mtime, ctime = os.lstat(ffn)
-            #print ffn
             data.append( (size, ffn) )
             cnt += 1
             if cnt%1000==0:
                 sys.stdout.write('%s '%cnt)
                 sys.stdout.flush()
-print "Done"                
+print( "Done" )    
 
 # TODO: option parsing
 show_amt = 30
             
 for size, fn in sorted( data )[-show_amt:]:
-    print '%6sB\t%r'%( kmg(size), fn )
+    print( '%6sB\t%r'%( kmg(size), fn ))

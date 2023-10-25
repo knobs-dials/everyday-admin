@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 ''' Meant as a one-shot OS disk cache warmer, such as search indexes, data read in unusual seeky ways, and whatnot.
     
     Note that when these files are larger than the cache can take,
@@ -6,9 +6,7 @@
     
     Shows speed (unless file was small, since those speeds are likely to be misleading).
 '''
-import sys,os,stat,time,getopt
-
-import helpers_format
+import sys,os,stat,time,getopt,re
 
 # The amount to read at once. 8MB seems fast and not very harsh on temporary memory use
 #chunksize = 8*1024*1024
@@ -20,6 +18,149 @@ chunksize = 64*1024
 min_report = 512*1024 
 
 global_total_bytes = 0
+
+
+def kmg(amount,kilo=1000, append='',thresh=15, nextup=0.9, rstrip0=True, extradigits=0, i_for_1024=True):
+    """ For more easily skimmable sizes
+
+        e.g.
+             kmg(3429873278462) == '3.4T'
+             kmg(342987327)     == '343M'
+             kmg(34298)         == '34K'
+
+             '%sB'%kmg(2342342324)                           == '2.3GB'
+             '%sB'%kmg(2342342324, kilo=1024)                == '2.2GiB'
+             '%sB'%kmg(2342342324, kilo=1024, extradigits=1) == '2.18GiB'
+             '%sB'%kmg(19342342324, kilo=1024)                == '18GiB'
+             '%sB'%kmg(19342342324, kilo=1024, extradigits=1) == '18GiB'  (because of rstrip0)
+
+        Decimal/SI kilos by default, so useful beyond bytes.
+        Specify kilo=1024 if you want binary kilos. By default this also adds the i.
+
+        thresh is the controls where we take one digit away, e.g. for 1.3GB but 16GB.
+        Default is at 15 which is entirely arbitrary. 
+        Disable using None.
+
+        nextup makes us switch to the next higher up earlier, e.g. 700GB but 0.96TB
+        Disable using None.
+ 
+        extradigits=1 (or maybe more) to unconditionally see a less-rounded number
+        (though note rstrip can still apply)
+
+        rstrip0     whether to take off '.0' if present (defaults to true)
+        append      is mostly meant for optional space between number and unit.
+    """
+    mega  = kilo*kilo
+    giga  = mega*kilo
+    tera  = giga*kilo
+    peta  = tera*kilo
+    exa   = peta*kilo
+    zetta = exa*kilo
+    yotta = zetta*kilo
+    if nextup is None:
+        nextup = 1.0
+    if thresh is None:
+        thresh = 1000
+    nextup = float(nextup)
+    # Yes, could be handled a bunch more more compactly (and used to be)
+    showdigits=0
+    if abs(amount) < nextup*kilo: # less than a kilo; omits multiplier and i
+        showval = amount
+    else:
+        for csize, mchar in ( (peta, 'P'),
+                              (tera, 'T'),
+                              (giga, 'G'),
+                              (mega, 'M'),
+                              (kilo, 'K'),
+                              #(exa,  'E'),# exa, zetta, yotta is shown as peta amounts. Too large to comprehend anyway.
+                              #(zeta, 'Z'),
+                              #(yotta,'Y'),
+           ):
+            if abs(amount) > nextup*csize:
+                showval = amount/float(csize)
+                if showval<thresh:
+                    showdigits = 1 + extradigits
+                else:
+                    showdigits = 0 + extradigits
+                append += mchar
+                if i_for_1024 and kilo==1024:
+                    append += 'i'
+                break
+    ret = ("%%.%df"%(showdigits))%showval
+    if rstrip0:
+        if '.' in ret:
+            ret=ret.rstrip('0').rstrip('.')
+    ret += append
+    return ret
+
+def parse_kmg(s, kilo=1000, listen_to_i=False):
+    """ e.g. parse_kmg('1k')               == 1000
+             parse_kmg('2 MiB', kilo=1024) == 2097152
+    
+        Quick and dirty implementation, may need work:
+          looks for kmgtp, Ignores anything not [0-9kmgtpi.]        
+
+        Kilo defailts to decimal kilos.
+        If you want binary kilos, specify kilos=1024 
+        ...OR set listen_to_i=True for things like 4.5KiB.
+           This is false by default because you ought to
+           know the amount of preformatting you need to do
+    """
+    if listen_to_i and 'i' in s:
+        kilo=1024
+    mega = kilo*kilo
+    giga = mega*kilo
+    tera = giga*kilo
+    peta = tera*kilo
+
+    ns = re.sub(r'[A-Za-z]','',s) #s.rstrip('kmgtpKMGTPiIbB') # or just everything?
+    if ns.count(',') == 1: # pseudo-relocalization.
+        ns = ns.replace(',','.') # e.g. for dutch people.
+    try:
+        ret = float(ns)
+        sl = s.lower()
+        # TODO: test whether it's right after the number, to avoid words with these letters messing things up.
+        if 'k' in sl: 
+            ret *= kilo
+        elif 'm' in sl:
+            ret *= mega
+        elif 'g' in sl:
+            ret *= giga
+        elif 't' in sl:
+            ret *= tera
+        elif 'p' in sl:
+            ret *= peta
+        ret = int(ret)
+        return ret
+    
+    except Exception as e:        
+        print( "Didn't understand value %r"%ns )
+        print( e )
+        raise
+
+
+
+def min_sec(sec, second_digits=1, left_pad=2):
+    """ takes float value, represents as minutes, seconds, e.g. 
+             min_sec(62.33242) == '1m02.3s'
+
+             min_sec(1.3)      == '0m01.3s'
+             min_sec(13)       == '0m13.0s'
+
+        second_digits refers to the digits after the decimal point to print,
+             min_sec(5.3,0)    == '0m05s'
+
+        left_pad to the left padding on the seconds (there by default for things to line up).
+             min_sec(5.3,0,0)  == '0m5s'
+    """
+    ret = []
+    mins = int( sec/60. )
+    secs = sec%60.
+    ret.append('%dm'%mins)
+    ret.append(('%%0%dd'%left_pad)%int(secs)) # whole seconds, doing separately makes the zero padding slightly less messy
+    ff = ('%%.%dfs'%second_digits)
+    ret.append( (ff % ( secs%1 ))[1:] ) 
+    return ''.join(ret)
 
 
 def readin(fn, first_bytes=None, last_bytes=None, printstuff=1):
@@ -36,10 +177,10 @@ def readin(fn, first_bytes=None, last_bytes=None, printstuff=1):
 
         if printstuff:
             sys.stdout.write("Reading: %-50s"%fn)
-            #sys.stdout.flush()
+            sys.stdout.flush()
         
         t = time.time()
-        f = open(fn)
+        f = open(fn, 'rb')
         readtotal = 0
         while True:
             if first_bytes!=None and first_bytes>0:
@@ -52,7 +193,7 @@ def readin(fn, first_bytes=None, last_bytes=None, printstuff=1):
             
             if first_bytes>0 and readtotal >= first_bytes:
                 #if printstuff:
-                #    print " - stopped after %d bytes"%readtotal
+                #    print( " - stopped after %d bytes"%readtotal)
                 break
         
         if first_bytes>0 and last_bytes > 0: # we didn't just read all, and want to read from the end
@@ -80,11 +221,11 @@ def readin(fn, first_bytes=None, last_bytes=None, printstuff=1):
                 extra='  (probably came from disk, not sole reader, or fragmented)'
                 extra=''
             if printstuff:
-                print "  --  %d MB/s%s"%( mbpersec , extra )
+                print( "  --  %d MB/s%s"%( mbpersec , extra ))
                 sys.stdout.flush()
         else:
             if printstuff:
-                print '' # for its newline
+                print( '' )# for its newline
                 #print '  --  (small)' 
                 #sys.stdout.flush()
 
@@ -93,25 +234,25 @@ def readin(fn, first_bytes=None, last_bytes=None, printstuff=1):
 
 
 def usage():
-    print "Reads data from files (and discards)"
-    print "Written as a user-controlled informed readahead thing ahead of real use, to exploit the OS's page cache"
-    print ""
-    print "     usage: readin [options] paths"
-    print ""
-    print "  If you do not use -r, you must specify filenames"
-    print ""
-    print "   -r          recursive. If you dont use this, specify all filenames you want read"
-    print "   -w          use filename whitelist (instead of reading everything), and add to that whitelist"
-    print "               (substring; will add globs later)"
-    print "   -o          only do stat(), don't read"
-    print "   -s <bytes>  how many bytes to read at the start of the file."
-    print "   -e <bytes>  how many bytes to read at the end of the file."
-    print "               If neither is specified, reads the whole file."
-    print "   -h          this help"
-    print ""
-    print " Example: readin -r -w .jpg -w .png ."
-    print " Example: readin -r -w .mp3 -s 2k -e 128 /data/MusicBulk"
-    print ""
+    print( "Reads data from files (and discards)")
+    print( "Written as a user-controlled informed readahead thing ahead of real use, to exploit the OS's page cache")
+    print( "")
+    print( "     usage: readin [options] paths")
+    print( "")
+    print( "  If you do not use -r, you must specify filenames")
+    print( "")
+    print( "   -r          recursive. If you dont use this, specify all filenames you want read")
+    print( "   -w          use filename whitelist (instead of reading everything), and add to that whitelist")
+    print( "               (substring; will add globs later)")
+    print( "   -o          only do stat(), don't read")
+    print( "   -s <bytes>  how many bytes to read at the start of the file.")
+    print( "   -e <bytes>  how many bytes to read at the end of the file.")
+    print( "               If neither is specified, reads the whole file.")
+    print( "   -h          this help")
+    print( "")
+    print( " Example: readin -r -w .jpg -w .png .")
+    print( " Example: readin -r -w .mp3 -s 2k -e 128 /data/MusicBulk")
+    print( "")
 
 
 
@@ -129,7 +270,7 @@ def main():
         if len(whitelist)>0:
             for ss in whitelist:
                 if ss in s:
-                    print "file %s matches %s"%(s,ss)
+                    print( "file %s matches %s"%(s,ss))
                     return True
             return False                
         else: # no whitelist
@@ -144,18 +285,18 @@ def main():
             if o=='-w':
                 whitelist.append(v)
             if o=='-s':
-                first_bytes = helpers_format.parse_kmg(v, kilo=1024)
+                first_bytes = parse_kmg(v, kilo=1024)
             if o=='-o':
                 stat_only = True
             if o=='-e':
-                last_bytes  = helpers_format.parse_kmg(v, kilo=1024)
+                last_bytes  = parse_kmg(v, kilo=1024)
             if o.startswith('-h'):
                 usage()
                 sys.exit(0)
     
-    except Exception, e:
-        print e
-        print 
+    except Exception as e:
+        print( e)
+        print()
         usage()
         sys.exit(-1)
 
@@ -165,13 +306,13 @@ def main():
         for fn in args:
             fn = os.path.realpath(fn)
             if not os.path.exists(fn):
-                print "Does not exist: %r"%fn
+                print( "Does not exist: %r"%fn)
             else:
                 if os.path.isfile(fn): # directly specified file?
-                    print fn
+                    print( fn)
                     if whitelist_match(fn):
                         if stat_only:
-                            #print "Statting: %r"%fn
+                            #print( "Statting: %r"%fn)
                             os.stat(fn)
                         else:
                             readin(fn, first_bytes, last_bytes)
@@ -190,7 +331,7 @@ def main():
                                     else:
                                         readin(fullpath, first_bytes, last_bytes)
     except KeyboardInterrupt:
-        print "\n\n Interrupted"
+        print( "\n\n Interrupted")
     took_time = time.time() - start_time
 
 
@@ -202,14 +343,14 @@ def main():
     
     if took_time>0:
         if not stat_only:
-            print "\nOverall speed:\n  %sB in %s  (~%sB/sec)"%(
-                helpers_format.kmg(global_total_bytes),
-                helpers_format.min_sec(took_time),
-                helpers_format.kmg(global_total_bytes/took_time),
-            )
-        print "  %sfiles / sec"%(
-            helpers_format.kmg(count_files / took_time, append=' '),
-        )
+            print( "\nOverall speed:\n  %sB in %s  (~%sB/sec)"%(
+                kmg(global_total_bytes),
+                min_sec(took_time),
+                kmg(global_total_bytes/took_time),
+            ))
+        print( "  %sfiles / sec"%(
+            kmg(count_files / took_time, append=' '),
+        ))
 
 
 if __name__=='__main__':

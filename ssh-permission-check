@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # suggests chmod commands to fix up ssh-related files and dirs,
 #  so that it won't complain and fail to log in
 #  TODO: check in more detail what happens when you don't have permissions
@@ -21,27 +21,27 @@ for userdetails in pwd.getpwall():
     if os.path.exists(sshdir): # basically a "is this a real user" check
         #print "Checking %r"%username
         checked_users.append(username)
-        dirmode = os.stat(sshdir).st_mode & 0777
-        if dirmode&022:        
-            print 'chmod %o %r   # currently: %o'%(dirmode&0755, sshdir, dirmode)
+        dirmode = os.stat(sshdir).st_mode & 0o0777
+        if dirmode & 0o022:        
+            print( 'chmod %o %r   # currently: %o'%(dirmode & 0o0755, sshdir, dirmode))
             suggestions+=1
             
         for r,d,f in os.walk(sshdir):
             for fn in f:
                 ffn = os.path.join(r, fn)
-                curmode  = os.stat(ffn).st_mode & 0777  # just permission bits from the mode bits
+                curmode  = os.stat(ffn).st_mode & 0o0777  # just permission bits from the mode bits
                 newmode  = curmode              
-                newmode &= 0755 # masks out 022 -- it's generally a bad idea for other people to write things
+                newmode &= 0o0755 # masks out 022 -- it's generally a bad idea for other people to write things
                 if fn in ('known_hosts',): # things others may read (only). TODO: think about this list
-                    newmode &= 0644
+                    newmode &= 0o0644
                 else: # most things only you may read
-                    newmode &= 0600
+                    newmode &= 0o0600
                         
                 if newmode != curmode:
-                    print 'chmod %o %-60r   # currently: %o'%(newmode, ffn, curmode)
+                    print( 'chmod %o %-60r   # currently: %o'%(newmode, ffn, curmode))
                     suggestions+=1
 
-print "# Checked users: %s"%(', '.join(sorted(checked_users)))
+print( "# Checked users: %s"%(', '.join(sorted(checked_users))))
 
 if suggestions==0:
-    print "# No permission suggestions, seems you're good."
+    print( "# No permission suggestions, seems you're good.")
