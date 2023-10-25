@@ -1,0 +1,36 @@
+#!/usr/bin/python3
+
+import os, sys, re 
+
+count_ascii       = 0
+count_nonascii    = 0
+count_validutf8   = 0
+count_invalidutf8 = 0
+
+# in py3, the paths that come out are str/bytes following what you handed in, so we start forcig a bytes path from a str argv
+for dirname in sys.argv[1:]: 
+    for r, ds, fs in os.walk( bytes(dirname,'utf8') ):  # we assume that the starting point isn't broken. 
+        for fn in fs:
+            ffn = os.path.join(r, fn)
+            match = re.search(br'([\x00-\x1f\x7f-\xff])',ffn)
+            has_nonascii = (match != None)
+            if has_nonascii:
+                #print match.groups()
+                count_nonascii += 1
+                try:
+                    dec = ffn.decode('utf8')
+                    count_validutf8 += 1
+                    #print( "OKAYUTF8 '%s'"%ffn)
+                except UnicodeDecodeError:
+                    print( 'BADUTF8 in %r'%ffn)
+                    #os.rename(ffn, ffn.decode('latin1').encode('utf8') )
+                    count_invalidutf8 += 1
+            else:
+                count_ascii += 1
+                #print( "ASCII %r"%ffn)
+                
+print( "Pure-ASCII paths: %d"%count_ascii)
+print( "Non-ASCII paths: %d, of which"%count_nonascii)
+print( "  valid UTF8: %d"%count_validutf8)
+print( "  invalid UTF8: %d"%count_invalidutf8)
+
