@@ -1,0 +1,246 @@
+#!/usr/bin/python3
+# 
+# http://engineering.pivotal.io/post/virtual_memory_settings_in_linux_-_the_problem_with_overcommit/
+# 
+# 
+
+kilo=1024
+mega=kilo*kilo
+giga=kilo*mega
+
+
+
+def kmg(amount,kilo=1000, append='',thresh=15, nextup=0.9, rstrip0=True, extradigits=0, i_for_1024=True):
+    """ For more easily skimmable sizes
+
+        e.g.
+             kmg(3429873278462) == '3.4T'
+             kmg(342987327)     == '343M'
+             kmg(34298)         == '34K'
+
+             '%sB'%kmg(2342342324)                           == '2.3GB'
+             '%sB'%kmg(2342342324, kilo=1024)                == '2.2GiB'
+             '%sB'%kmg(2342342324, kilo=1024, extradigits=1) == '2.18GiB'
+             '%sB'%kmg(19342342324, kilo=1024)                == '18GiB'
+             '%sB'%kmg(19342342324, kilo=1024, extradigits=1) == '18GiB'  (because of rstrip0)
+
+        Decimal/SI kilos by default, so useful beyond bytes.
+        Specify kilo=1024 if you want binary kilos. By default this also adds the i.
+
+        thresh is the controls where we take one digit away, e.g. for 1.3GB but 16GB.
+        Default is at 15 which is entirely arbitrary. 
+        Disable using None.
+
+        nextup makes us switch to the next higher up earlier, e.g. 700GB but 0.96TB
+        Disable using None.
+ 
+        extradigits=1 (or maybe more) to unconditionally see a less-rounded number
+        (though note rstrip can still apply)
+
+        rstrip0     whether to take off '.0' if present (defaults to true)
+        append      is mostly meant for optional space between number and unit.
+    """
+    mega  = kilo*kilo
+    giga  = mega*kilo
+    tera  = giga*kilo
+    peta  = tera*kilo
+    exa   = peta*kilo
+    zetta = exa*kilo
+    yotta = zetta*kilo
+    if nextup is None:
+        nextup = 1.0
+    if thresh is None:
+        thresh = 1000
+    nextup = float(nextup)
+    # Yes, could be handled a bunch more more compactly (and used to be)
+    showdigits=0
+    if abs(amount) < nextup*kilo: # less than a kilo; omits multiplier and i
+        showval = amount
+    else:
+        for csize, mchar in ( (peta, 'P'),
+                              (tera, 'T'),
+                              (giga, 'G'),
+                              (mega, 'M'),
+                              (kilo, 'K'),
+                              #(exa,  'E'),# exa, zetta, yotta is shown as peta amounts. Too large to comprehend anyway.
+                              #(zeta, 'Z'),
+                              #(yotta,'Y'),
+           ):
+            if abs(amount) > nextup*csize:
+                showval = amount/float(csize)
+                if showval<thresh:
+                    showdigits = 1 + extradigits
+                else:
+                    showdigits = 0 + extradigits
+                append += mchar
+                if i_for_1024 and kilo==1024:
+                    append += 'i'
+                break
+    ret = ("%%.%df"%(showdigits))%showval
+    if rstrip0:
+        if '.' in ret:
+            ret=ret.rstrip('0').rstrip('.')
+    ret += append
+    return ret
+
+
+
+f = open('/proc/meminfo')
+lines = f.readlines()
+f.close()
+mi = {}
+for line in lines:
+    if ':' in line:
+        var, val = line.strip().split(':',1)
+        val = val.strip()
+        if 'kB' in val:
+            val = 1024*int(val.replace('kB','').strip()) # hacky hacky :)
+            mi[var]=val
+
+
+MT   = mi['MemTotal']
+MF   = mi['MemFree']
+ST   = mi['SwapTotal']
+CL   = mi['CommitLimit']
+CAS  = mi['Committed_AS'] # keep in mind this is an estimate
+CA   = mi['Cached']
+SO   = mi['Buffers'] + mi['KernelStack'] + mi['Dirty'] + mi['Writeback'] + mi['Slab'] #mi['SUnreclaim'] 
+         # kernel memory and a bunch of IO   TODO: check.
+SW   = mi['SwapTotal'] - mi['SwapFree']
+SH   = mi['Shmem']  
+#print mi
+
+# estimate how much RAM is used by application allocation (all RAM  minus usable/free RAM  and in-RAM system)
+PRIV = mi['MemTotal'] - mi['MemFree'] - SO - CA    #- mi['Cached']  # should this include kernel?
+
+
+f = open('/proc/sys/vm/overcommit_memory')
+overcommit_mode = f.read().strip()
+f.close()
+
+# " overcommit_kbytes is the counterpart of overcommit_ratio. Only one
+#   of them may be specified at a time. Setting one disables the other (which
+#   then appears as 0 when read). "
+
+f = open('/proc/sys/vm/overcommit_ratio')
+overcommit_percent = float( f.read() )
+f.close()
+
+f = open('/proc/sys/vm/overcommit_kbytes')
+overcommit_kb = float( f.read() )
+f.close()
+
+#if overcommit_percent == 0: # set via _kbytes
+#    commit_limit = 1024*overcommit_kb
+#else:
+#    commit_limit = ST + MT*(0.01*overcommit_percent)
+# this is redundant with proc/meminfo's CommitLimit    
+
+calculated_percent = (100.*CL) / MT
+
+
+print( "Total RAM             = %15s (%sB)"%(MT, kmg(MT, kilo=1024)))
+print( "Total Swap            = %15s (%sB)"%(ST, kmg(ST, kilo=1024)))
+print( "Commit limit          = %15s (%sB)    (see below)"%(CL, kmg(CL, kilo=1024)))
+print('')
+print( "Currently:")
+print( " Private comitted     = %15s (%sB)   (estimated)"%(PRIV, kmg(PRIV, kilo=1024)))
+print( " Shared               = %15s (%sB)"%(SH,  kmg(SH, kilo=1024))) # SHM and tmpfs
+print( " Kernel               = %15s (%sB)"%(SO,  kmg(SO, kilo=1024)))
+if 0:
+    print( "   slab                 = %15s (%sB)"%( mi['Slab'],        kmg(mi['Slab'],kilo=1024) ))
+    #print "   sunreclaim           = %15s (%sB)    if large this may be largele ZFS ARC"%( mi['SUnreclaim'],  kmg(mi['SUnreclaim'],kilo=1024) )
+    print( "   buffers              = %15s (%sB)"%( mi['Buffers'],     kmg(mi['Buffers'],kilo=1024) ))
+    print( "   kstack               = %15s (%sB)"%( mi['KernelStack'], kmg(mi['KernelStack'],kilo=1024) ))
+    print( "   dirty                = %15s (%sB)"%( mi['Dirty'],       kmg(mi['Dirty'],kilo=1024) ))
+    print( "   writeback            = %15s (%sB)"%( mi['Writeback'],   kmg(mi['Writeback'],kilo=1024) ))
+       # kernel memory and a bunch of IO   TODO: check.
+
+# TODO: figure out ghow shared and kernel are counted towards used/committed, I'm assuming part of this is wrong
+
+print( " Comitted_AS          = %15s (%sB)   (system estimate)  "%( CAS, kmg(CAS, kilo=1024) ))
+
+print( "                     (so there is approx %sB allocated-but-never-used?)"%(    kmg(CAS-PRIV-SH-SO, kilo=1024)  ))
+# CAS is the estimate of how much we need -- so that we never run into OOM.
+#   I'm assuming this is the total sum of all real backed uses,
+#   and that minus private, shared, and kernel is a decent estimate of lazy/overcommited allocation
+
+
+print( "")
+print( " Usable:")
+print( "   Caches             = %15s (%sB)"%(CA, kmg(CA, kilo=1024)))
+print( "   Unused             = %15s (%sB)"%(MF,  kmg(MF, kilo=1024)))
+print( "")
+
+print( " Counted toward swap  = %15s (%sB)"%(SW,  kmg(SW, kilo=1024)))
+
+print('')
+print( "------")
+print('') 
+
+if overcommit_mode == '2':
+    print( "Overcommit mode:  No overcommit   (overcommit_memory=2)")
+    pass
+
+elif overcommit_mode == '1': 
+    print( "Overcommit mode:  Overcommit without checks   (overcommit_memory=1)")
+    pass
+
+elif overcommit_mode == '0':
+    #Looks like overcommit_ratio and overcommit_kb only apply to 0
+    
+    required_ratio = float(MT - ST) / MT
+    better_ratio = float(MT - ST - max(2*giga, 0.03*MT)) / MT
+    
+    print( "Overcommit mode:  Overcommit with heuristic checks   (overcommit_memory=0)")
+            
+    print('')
+    print( "Current commit ratio is",end='')
+    if overcommit_percent!=0:
+        print( "(set via overcommit_ratio) %d"%overcommit_percent)
+    else:
+        print( "(set via overcommit_kb and effectively ratio) %d"%calculated_percent)
+
+    print('')
+    print('')
+    print( "With current settings, userspace can allocate %sB, %d%% of physical RAM"%(kmg(CL),         (100.*CL)/MT))
+    if CL < MT:
+        print( "  remaining ~%sB will probably largely be used for caches"%( kmg(MT-CL, kilo=1024)))
+        if MT-CL > 10*giga:
+            print( "  (this may be a bit much, depending on whether your apps actively rely on page cache)")
+    else:
+        print( "   leaving no memory dedicated to buffers/cache")
+        if CA> 3*giga:
+            print( "   yet right now there's a few gigs in caches, so memory pressure is probably low")
+        if CA < 1*giga:
+            print( "   and right now there's not much in cache.  Consider whether you want that. ")
+            
+
+    print('')
+    print('')
+    print( "With %sB swap and %sB physical memory "%(kmg(ST, kilo=1024), kmg(MT, kilo=1024)))
+    if better_ratio<=0:
+        print( "   Because you've got a lot of swap...")
+
+    print( "   overcommit_ratio >= %d to use all RAM       (threshold of *over*commit)   "%(100*required_ratio))
+        
+    if better_ratio>0:
+        print( "   overcommit_ratio ~= %d to leave some RAM for caches"%(100*better_ratio))
+        print( "   ")
+
+
+    print('')
+    if required_ratio > 1.1* 0.01* calculated_percent:
+        print( "Consider increasing overcommit_ratio")
+        
+    if required_ratio > .75 or ST < 0.1*MT:
+        print( "Consider increasing swap space (currently %sB) to something roughly on the same order as RAM size (currently %sB)"%(kmg(ST,kilo=1024), kmg(MT, kilo=1024)))
+    #elif ST < 2*giga:
+    #    print "consider increasing swap space"
+    pass
+
+else:
+    print( "ERROR: don't know overcommit_memory=%r "%(overcommit_mode))
+
+
+
