@@ -1,0 +1,122 @@
+#!/usr/bin/python3
+#
+# TODO: improve speed. Don't be stupid, mostly - right now things get statted multiple times.
+# 
+import os,datetime,sys
+from datetime import datetime
+
+#take filenames, and/or use os.walk?
+
+datetimes = []
+year_count    = { }
+month_count   = { 1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 7:0, 8:0, 9:0, 10:0, 11:0, 12:0 }
+month_names   = { 1:'jan', 2:'feb', 3:'mar', 4:'apr', 5:'may', 6:'jun', 7:'jul', 8:'aug', 9:'sep', 10:'oct', 11:'nov', 12:'dec' }
+weekday_count = { 0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0 }
+weekday_names = { 0:'mon', 1:'tue', 2:'wed', 3:'thu', 4:'fri', 5:'sat', 6:'sun' }
+ym_count      = { }
+
+
+def sameline(s,stream=sys.stderr):
+    """ Used for newlineless tally: Prints the given string on the given stream (defaults to stderr),
+        then clears the rest of the line and goes to the start of the same line.
+        (so to go on with normal printing you'ld want a sameline('') first)
+        Requries ANSI capability (TODO: test for that?)
+
+        Tries to prevent new lines caused by wrapping of long strings (filename)
+        by printing only first so-many characters of a filename.
+    """
+    stream.write(s)
+    stream.write('\x1b[K\r') #clear rest of line, send cursor to start of line
+    stream.flush()
+
+
+used=0
+
+try:
+    args = sys.argv[1:]
+    if len(args)==0:
+        print( "No arguments, using current directory")
+        args=['.']
+    #print args
+
+    for bdir in args:
+        i=0
+        for r,ds,fs in os.walk(bdir):
+            for fn in fs:
+                i+=1
+
+                #if not '.py' in fn:
+                #    continue
+                ffn = os.path.join(r,fn)
+
+                try:
+                    used+=1
+                    # perhaps count ctime as well?
+                    for timestamp in (os.stat(ffn).st_mtime, os.stat(ffn).st_ctime):
+
+                        mtime = os.stat(ffn).st_mtime
+                        dt = datetime.fromtimestamp(mtime)
+
+                        weekday_count[dt.weekday()] += 1
+                        month_count[dt.month]       += 1
+                        if dt.year not in year_count:
+                            year_count[dt.year]=1
+                        else:
+                            year_count[dt.year]+=1
+
+                        ym='%04d_%02d'%(dt.year,dt.month)
+                        if ym not in ym_count:
+                            ym_count[ym]=1
+                        else:
+                            ym_count[ym]+=1
+
+                except OSError: # probably unresovable symlink?
+                    pass
+
+                if i%33==0:
+                    msg = 'scanned %d files'%i
+                    if used<i:
+                        msg+=', used %d'%used
+                    sameline(msg)
+
+except KeyboardInterrupt:
+    print( "Ctrl-C, showing partial result.")
+            
+print()
+print( "Summarizing %d files"%used)
+print()
+
+# TODO: show it histogram-stlye?
+
+histwidth = 80
+
+if 0:
+    print( "Years:")
+    maxcount = max(year_count.values())
+    for year in sorted(year_count):
+        print( '  %9s: %6d'%(year, year_count[year]/2), end=' ')
+        print( '*'*int(histwidth*year_count[year]/maxcount) )
+    print
+
+print( "Months-in-years:")
+maxcount = max(ym_count.values())
+for ym in sorted(ym_count):
+    y,m = ym.split('_')
+    print( '  %s %04d: %6d'%(month_names[int(m,10)], int(y),  ym_count[ym]/2), end=' ')
+    print( '*'*int(histwidth*ym_count[ym]/maxcount))
+print()
+
+if 1:
+    print( "Months:")
+    for month in sorted(month_count):
+        print( '  %8s: %6d'%(month_names[month], month_count[month]/2), end=' ')
+        print( '*'*int(histwidth*month_count[month]/maxcount))
+    print()
+
+if 0:
+    print( "Weekdays:")
+    maxcount = max(weekday_count.values())
+    for weekday in sorted(weekday_count):
+        print( '  %8s: %6d'%(weekday_names[weekday], weekday_count[weekday]/2), end=' ')
+        print( '*'*int(histwidth*weekday_count[weekday]/maxcount))
+    print()

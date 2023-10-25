@@ -1,0 +1,26 @@
+#!/usr/bin/python
+import hashlib,sys,base64
+
+"""
+Calculates SHA1 for each specified file, prints it in hex and base32
+"""
+
+
+chunksize=128*1024
+
+for fn in sys.argv[1:]:
+    print( fn)
+
+    sha1h = hashlib.sha1()
+    f=open(fn)
+    data=f.read(chunksize)
+    while len(data)>0:
+        sha1h.update(data)
+        data=f.read(chunksize)
+        
+    sha1_in_hex    = sha1h.hexdigest()
+    sha1_in_base32 = base64.b32encode( sha1h.digest() )
+
+    print( " SHA1, hex:    %s"%sha1_in_hex)
+    print( " SHA1, base32: %s"%sha1_in_base32)
+    

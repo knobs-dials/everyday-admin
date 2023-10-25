@@ -1,0 +1,445 @@
+#!/usr/bin/python3
+
+import os, sys, math
+import numpy
+
+
+
+
+
+def sfloat_na(f,                                  removetrail=1, digits=None,              extradigits=0,           estyleabove=100000):
+    ' sfloat() without alignment spaces, which is basically just a strip() added '
+    return sfloat(f, fixedwidth=0,  aligndigit=0, removetrail=removetrail, digits=digits,  extradigits=extradigits, estyleabove=estyleabove).strip()
+
+
+def sfloat(f,        fixedwidth=10, aligndigit=4, removetrail=1,  digits=None,             extradigits=0,           estyleabove=100000):
+    ''' Idea: when studying a screen full of numbers,
+              show only one or two significant digits at any scale
+              to make for easily skimmable figures by having 
+                their length, and alignment, indicate their scale.
+
+        WARNING: It's approximate at best, and makeshift at best, and biased towards specific interests.
+
+        Started because of eigenvector expression and other fractions that can work at different orders of magnitude. 
+        Numbers printed like 3.2345e-3 and 4.2342e-5 take time to compare even though they are hugely different.
+
+        ...yes, this does defeat the scientific significant-digits approach.
+        Easier to read, though.
+
+
+        removetrail - will remove trailing zeroes, and the digit if that's all that's left
+           0.00 -> 0
+           0.50 -> 0.5
+
+        aligndigit - will try to add spaces so that the digit is some minimum area from the right edge of the string.
+             sfloat( 6762.73408   ) ==  '  6763    '
+             sfloat( 18.5608302   ) ==  '    18.6  '
+             sfloat( 0.995123     ) ==  '     0.99 '
+             sfloat( 0.932929494  ) ==  '     0.93 '
+             sfloat( 0.050000     ) ==  '     0.05 '
+             sfloat( 0.0717395048 ) ==  '     0.072'
+          Note that it will still move for small-enough numbers. This is by design, for my idea of inspectibility. E.g.
+             sfloat( 8.22697e-05  ) ==  '  0.000082'
+          Also note that *very* tiny numbers become 0, e.g.:
+             sfloat( 3.66528e-08  ) ==  '     0    '
+
+        digits - force the amount of digits if specified
+           e.g. to get mostly the alining/zero-strippin behaviour, BUT note you can break both the alignment and fixed width this way
+             sfloat( 18.5608302, digits=1   ) ==  '    18.6  '
+             sfloat( 18.5608302, digits=2   ) ==  '    18.56 '
+             sfloat( 18.5608302, digits=3   ) ==  '    18.561'
+             sfloat( 18.5608302, digits=4   ) ==  '   18.5608'
+             sfloat( 18.5608302, digits=9   ) ==  ' 18.5608302'
+
+        extradigits - use default rather that fixed behaviour, but ''add' a digit to all
+            useful to show moderate precision
+             sfloat( 6762.73408  , extradigits=1 ) ==  '  6762.7  '
+             sfloat( 18.5608302  , extradigits=1 ) ==  '    18.56 '
+             sfloat( 0.995123    , extradigits=1 ) ==  '     0.995'
+             sfloat( 0.932929494 , extradigits=1 ) ==  '     0.933'
+             sfloat( 0.050000    , extradigits=1 ) ==  '     0.05 '
+             sfloat( 0.0717395048, extradigits=1 ) ==  '    0.0717'
+             sfloat( 8.22697e-05 , extradigits=1 ) ==  ' 0.0000823'
+             sfloat( 3.66528e-08 , extradigits=1 ) ==  ' 0.00000004'   which is slightly broken
+
+        fixedwidth - places it in a string that will be a given width
+          (unless the thing you want to print is itself wider)
+          meaning you can tell this function to make column-like output without wrapping that yourself
+
+          It often make sense to use fixedwidth when you use aligndigit or extradigits,
+            increasing the former when you increase the latter.
+    '''
+    if type(fixedwidth) in (int, #long,
+                                float):
+        fixedwidth=str(int(fixedwidth))
+        
+    af = abs(f)
+    if af>estyleabove:
+        ret= '%.1e'%f # '6.1e+07' style (in part to keep it shortinsh so that fixedwith makes sense)
+        removetrail=0 # there's a digit before the e and there may be a trailing 0, but we don't want that removed.
+
+    else: 
+        if 0: # could do something clever here, say...
+            digits = max(0,round( 1.+0.5*-math.log(af) ))
+            # (still needs a af=max(af,machine_epsilon, or a test.)
+        else: # but this is easier to understand and tweak
+            if digits is None:
+                if   af == 0.:      digits = 0
+                elif af < .00001:   digits = 7
+                elif af < .0001:    digits = 6
+                elif af < .001:     digits = 5
+                elif af < .01:      digits = 4
+                elif af < .1:       digits = 3
+                elif af < .5:       digits = 3
+                elif af < 7:        digits = 2
+                elif af < 100:      digits = 1
+                elif af < 1000:     digits = 0
+                else:               digits = 0    # higher? show as integer
+
+        digits += extradigits
+        digits  = max(0,digits) # negative extradigits can make that happen
+
+        ret = ('%% .%df'%digits)%f
+
+        if removetrail: # remove trailing zeroes, and a dot if it's there afterwards
+            if '.' in ret:
+                while ret.endswith('0'):
+                    ret=ret[:-1]
+            if ret.endswith('.'):
+                ret=ret[:-1]
+        
+    if aligndigit:
+        if 'e' in ret:
+            epos = ret.rindex('e')
+            pos_after_e = len(ret)-epos-2
+            aligndigit-=1
+            if pos_after_e<aligndigit:
+                ret+=' '*(aligndigit-pos_after_e) 
+        elif '.' in ret:
+            aligndigit+=1 # cheat for off by 1
+            dpos = ret.rindex('.')
+            pos_after_dot = len(ret)-dpos
+            #print 'positions after dot:',pos_after_dot
+            aligndigit-=1
+            if pos_after_dot<aligndigit:
+                ret+=' '*(aligndigit-pos_after_dot) 
+        else:
+            aligndigit+=1 # cheat for off by 1
+            i=len(ret)-1
+            while ret[i]==' ':
+                i-=1               
+            final_spaces = len(ret)-i
+            #print 'final spaces:',final_spaces
+            if final_spaces<aligndigit:
+                ret+=' '*(aligndigit-final_spaces)
+            
+    if fixedwidth:
+        ret = ('%% %ss'%fixedwidth)%ret
+            
+    return ret
+
+
+
+def prepare(ary, bins=25, sigma=None, percentiles=None, debug=False):
+    ''' Helper for print_histogram.
+
+        Could be useful to call directly if you want to use the same 
+          sigma or percentile cutoff logic for other things.
+
+        if sigma isn't none, it is the amount of sigmas to cut the edge by
+    '''
+    if not isinstance(ary, numpy.ndarray):
+        ary = numpy.array(ary)
+    ary = ary.flatten() # reshape. Not sure this is necessary.
+
+    mn = numpy.mean(ary) # can something do both in one go?
+    sg = numpy.std(ary)
+
+    ret = {
+        'range_full': (numpy.amin(ary),numpy.amax(ary)),
+        'reduction': 'none',
+        'meanval':mn,
+        'sigval':sg,
+    }
+
+    if sigma or percentiles:
+        if numpy.min(ary) == numpy.max(ary):
+            raise ValueError( "No variance in values (all are ~%s)"%sfloat_na(numpy.min(ary)).lstrip() )
+            return
+
+        if sigma:
+            ret['reduction'] = '%.1f sigma'%sigma
+            lowthresh        = mn-sg*sigma
+            highthresh       = mn+sg*sigma
+            
+            print( lowthresh, highthresh)
+        
+        elif percentiles:
+            fp, sp = percentiles
+            #fp = int(fp)
+            #sp = int(sp)
+            ret['reduction'] = '%.1f,%.1f percentiles'%(fp,sp)
+            fp_v = numpy.percentile(ary, fp)
+            sp_v = numpy.percentile(ary, sp)
+            ret['percentile%.1f'%fp] = fp_v
+            ret['percentile%.1f'%sp] = sp_v
+            lowthresh  = fp_v
+            highthresh = sp_v
+
+        selected      = ary[numpy.logical_and( ary>lowthresh, ary<highthresh )]
+        counts, edges = numpy.histogram( selected, bins=bins )
+                            
+        ret['count_data']       = len(ary)
+        ret['count_selected']   = len(selected)
+        if len(selected)>0:
+            ret['range_selected'] = (numpy.amin(selected),numpy.amax(selected))
+        ret['thresholds']     = (lowthresh, highthresh)
+    else:
+        counts, edges = numpy.histogram( ary, bins=bins )
+    
+    ret['counts']     = counts
+    ret['edges']      = edges
+    return ret
+
+
+def kmg(amount,kilo=1000, append='',thresh=15, nextup=0.9, rstrip0=True, extradigits=0, i_for_1024=True):
+    """ For more easily skimmable sizes
+
+        e.g.
+             kmg(3429873278462) == '3.4T'
+             kmg(342987327)     == '343M'
+             kmg(34298)         == '34K'
+
+             '%sB'%kmg(2342342324)                           == '2.3GB'
+             '%sB'%kmg(2342342324, kilo=1024)                == '2.2GiB'
+             '%sB'%kmg(2342342324, kilo=1024, extradigits=1) == '2.18GiB'
+             '%sB'%kmg(19342342324, kilo=1024)                == '18GiB'
+             '%sB'%kmg(19342342324, kilo=1024, extradigits=1) == '18GiB'  (because of rstrip0)
+
+        Decimal/SI kilos by default, so useful beyond bytes.
+        Specify kilo=1024 if you want binary kilos. By default this also adds the i.
+
+        thresh is the controls where we take one digit away, e.g. for 1.3GB but 16GB.
+        Default is at 15 which is entirely arbitrary. 
+        Disable using None.
+
+        nextup makes us switch to the next higher up earlier, e.g. 700GB but 0.96TB
+        Disable using None.
+ 
+        extradigits=1 (or maybe more) to unconditionally see a less-rounded number
+        (though note rstrip can still apply)
+
+        rstrip0     whether to take off '.0' if present (defaults to true)
+        append      is mostly meant for optional space between number and unit.
+    """
+    mega  = kilo*kilo
+    giga  = mega*kilo
+    tera  = giga*kilo
+    peta  = tera*kilo
+    exa   = peta*kilo
+    zetta = exa*kilo
+    yotta = zetta*kilo
+    if nextup is None:
+        nextup = 1.0
+    if thresh is None:
+        thresh = 1000
+    nextup = float(nextup)
+    # Yes, could be handled a bunch more more compactly (and used to be)
+    showdigits=0
+    if abs(amount) < nextup*kilo: # less than a kilo; omits multiplier and i
+        showval = amount
+    else:
+        for csize, mchar in ( (peta, 'P'),
+                              (tera, 'T'),
+                              (giga, 'G'),
+                              (mega, 'M'),
+                              (kilo, 'K'),
+                              #(exa,  'E'),# exa, zetta, yotta is shown as peta amounts. Too large to comprehend anyway.
+                              #(zeta, 'Z'),
+                              #(yotta,'Y'),
+           ):
+            if abs(amount) > nextup*csize:
+                showval = amount/float(csize)
+                if showval<thresh:
+                    showdigits = 1 + extradigits
+                else:
+                    showdigits = 0 + extradigits
+                append += mchar
+                if i_for_1024 and kilo==1024:
+                    append += 'i'
+                break
+    ret = ("%%.%df"%(showdigits))%showval
+    if rstrip0:
+        if '.' in ret:
+            ret=ret.rstrip('0').rstrip('.')
+    ret += append
+    return ret
+
+
+    
+def kmg_formatter(val, align='l', suffix='B'):
+    ' Useful for large byte sizes ' 
+    return '%10s'%(kmg(val, kilo=1000)+suffix)
+
+
+
+def machine_epsilon(func=float): # 1.1102230246251565e-16 because python's float is 64-bit
+    ret = func(1)
+    while func(1)+func(ret) != func(1):
+        ret_last = ret
+        ret = func(ret) / func(2)
+    return ret
+
+
+def digits_for_range(ary):
+    if ary.dtype.kind in 'ui':
+        return 0
+
+    if numpy.mod(numpy.amax( ary ),1) < machine_epsilon:
+        return 0
+
+    mi = numpy.amin(ary)
+    ma = numpy.amax(ary)
+
+    # I forget the details about this
+    if abs(mi)<machine_epsilon:
+        dmi = 0
+    else:
+        dmi = max(0,( 0.52*-math.log( abs(mi) ) ))
+    if abs(ma)<machine_epsilon:
+        dma = 0
+    else:
+        dma = max(0,( 0.52*-math.log( abs(ma) ) ))
+    dr = max(0,( 0.52*-math.log( max(machine_epsilon,ma-mi) ) ))
+
+    cd = min(dmi,dma)+2
+    cd = round(cd)
+
+    return cd
+    
+def print_histogram(ary, bins=25,
+                    sigma=None, percentiles=None,
+                    histwidth=None, color_by_sigma=False, use_unicode=False,
+                    formatter=kmg_formatter):
+    ''' CONSIDER renaming to text_histogram 
+     
+        Do everything from data to printing.
+        (Sometimes you want to use the parts yourself isntead)
+
+        If sigma is a number, we create a histogram only of the samples up to that-many standard deviations from the mean.
+        Usually 2.5 or 3 is decent to remove outliers but keep most useful data.
+
+        Percentiles may work better than that. expected to be a 2-tuple of numbers.    
+        Keep in mind that this can break on very sharp peaked data, because percentiles may be basically identical so not filter in any data.
+
+
+        Can color by whether bars are in the 1-sigma, 2-sigma, or 3-sigma range.
+        (only if also thresholding by sigma -- change that?)
+
+        If you allow use_unicode=True, the bar's width will be a little more accurate 
+        (steps of eights of a full width, using unicode characters)
+        Disabled by default as you often won't see it and you may not have a UTF-8-capable terminal to start with
+
+        CONSIDER: returning histogram data so we can format and print later
+
+        CONSIDER: using percentiles instead. And allowing forced values.
+    '''
+    histdata = prepare(ary, bins=bins, sigma=sigma, percentiles=percentiles)
+
+    #print histdata
+    
+    histwidth = 80.
+    
+    counts = histdata['counts']
+    edges  = histdata['edges']
+    mi,ma = histdata['range_full']
+    mn = histdata['meanval']
+    #print ' Full value range:  (%s, %s)'%(sfloat_na(mi,extradigits=2),sfloat_na(ma,extradigits=2))
+    print( ' Full value range:  (%s, %s)'%(mi,ma))
+    
+    sg = histdata['sigval']
+    #    print "sigma=%s"%sfloat_na(histdata['sigval'],extradigits=2)
+    
+    if histdata['reduction'] != 'none'and histdata['count_selected']>0:
+        mi,ma = histdata['range_selected']
+        print( ' Showing value range: (%f, %f) based on %s'%(
+            mi,#sfloat_na(mi,extradigits=2),
+            ma,#sfloat_na(ma,extradigits=2),
+            histdata['reduction'],
+            ))
+
+    # ask for an amount of digits relevant to the *range*, not just the number itself.
+    # TODO: maybe refine that logic and use more generally?
+    digits = digits_for_range( numpy.array([mi,ma]) )+1
+    #rng = max(machine_epsilon(), ma-mi) # machine epsilon as smallest number against an exception for 0
+    rng = ma-mi
+    if rng <= 1.0E-5: # in case we get handed a 32bit float numpy array 
+        raise ValueError( "too little variance in values (all are %s~%s)"%(mi,ma) )
+            
+    cd = max(0,round( 1.+0.52*-math.log(rng) ))
+
+    print( 'rng',rng)
+    
+    # pixel drawing using Unicode characters:)
+    FULL  = u'\u2588'#.encode('utf8')
+    SEVEN = u'\u2589'#.encode('utf8')
+    SIX   = u'\u258A'#.encode('utf8')
+    FIVE  = u'\u258B'#.encode('utf8')
+    FOUR  = u'\u258C'#.encode('utf8')
+    THREE = u'\u258D'#.encode('utf8')
+    TWO   = u'\u258E'#.encode('utf8')
+    ONE   = u'\u258F'#.encode('utf8')
+    bitblocks = [ONE,TWO,THREE,FOUR,FIVE,SIX,SEVEN]
+
+    print( "     value range            count")
+    mc = float(max(counts))
+    #if mc==0.0:
+    #    print "no data"
+    #    return
+
+    histwidth -= 40 # the width of the text left of the bars
+
+    for i,c in enumerate(counts):
+        before=''
+        after=''
+
+        pw = histwidth*(c/mc)
+        #print pw%1,int(7.* (pw%1))
+        bitblock = ''
+        if use_unicode:
+            bitblock = bitblocks[int( float(len(bitblocks)-1)*(pw%1))]  # % is a float operation in python
+            #print int(7.* (pw%1)), bitblock
+        fs = '%%12s .. %%12s  %%%ds  |%%s%%s%%s%%s'%max(7, round(.1+math.log(mc,10)))
+        #print mc,fs
+        print( fs%(
+            formatter(edges[i],   align='r'),
+            formatter(edges[i+1], align='l'),
+            c,
+            before,
+            #'*'*int(pw),
+            u'\u2588'*int(pw),
+            bitblock,
+            after
+        ) )
+
+
+
+sizes = []
+
+if len(sys.argv)==1:
+    print( "Need the names of some directories to walk")
+    sys.exit(0)
+
+for arg in sys.argv[1:]:
+    for r, ds, fs in os.walk(arg):
+        for fn in fs:
+            ffn = os.path.join(r, fn)
+            stob = os.lstat(ffn)
+            sizes.append(stob.st_size)
+
+if len(sizes)==0:
+    print( "Didn't see any files" )
+    sys.exit(0)
+
+print_histogram( sizes, formatter=kmg_formatter )
+
