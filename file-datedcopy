@@ -1,0 +1,21 @@
+#!/usr/bin/python3
+#
+# Makes a copy of the file, adding the current date-n-time to the filename.
+#   e.g.   file-datedcopy myfilename   might create   myfilename.2023-10-25_160615
+# Made for quick backups, especially while editing config files.
+
+import os, sys, datetime, shutil
+
+now = datetime.datetime.now()
+now_s = now.strftime('%Y-%m-%d_%H%M%S')
+for arg in sys.argv[1:]:
+    dated_name = '%s.%s'%(arg, now_s)
+    print(' %s -> %s'%(arg, dated_name))
+    shutil.copy(arg, dated_name)  
+
+#Used to be a bash script with the following but python makes it easier to be robust to weird characters
+
+#NEWNAME=$1.`date +%Y-%m-%d_%H%M%S`
+#echo $1"  ->  "$NEWNAME
+#cp -i $1 $NEWNAME
+
