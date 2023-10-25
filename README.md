@@ -1,6 +1,11 @@
 Various scripts made in the process of being a sysadmin, that are too random to get their own repository.
 
-Sorted roughly in order of how much I seem to actually use them.
+Sorted roughly in order of how much I seem to actually use them. 
+
+Most are very dumb and singular, and that's often the point.
+
+
+In space cleanup, you may also find https://github.com/scarfboy/file-count and https://github.com/scarfboy/duppy useful
 
 
 
@@ -74,7 +79,7 @@ Verrry simple.
 Tries to summarize what various people are up to 
 * shows process names -- and filters out boring stuff, particularly for root
 * shows working dir for shells (and some others)
-* CPU / wait state if worth mentioning
+* mentions nontrivial CPU / wait state 
 
 ```
     # otherpeople
@@ -151,11 +156,13 @@ a bit of backoff time is useful.
 
 Meant to feed things to xargs, in that it checks that files
 that match a given shellglob, 
-and that sit under a given directory.
-have not changed size/ctime in a while (currently hardcoded to ~10 seconds),
-and then will print them once and never again.
+that sit under a given directory,
+have not changed size/ctime in a while (currently hardcoded to ~10 seconds).
 
-I use this to compress incoming data on a server after it's fairly certain they are complete:
+Once that's all true it prints their path once and never again.
+
+I use this to compress data that's being copied into a storage server, 
+as a more informed backoff so that it's surer to be done copying:
 
 ```
    file-stable '*.dat' /data/archive | xargs -t -n 1 -P 3 pigz -3
@@ -200,7 +207,7 @@ Helps answer questions like
 
 ## file-totalsize
 
-Takes a list of files on stdin, stats them and sums their size and count.
+Takes a list of filenames on stdin, stats them and sums their size and count.
 
 I mostly use this as a more targeted variant of file-summarize-extensions
 
@@ -213,6 +220,8 @@ I mostly use this as a more targeted variant of file-summarize-extensions
     # find /data/images -iname '*.jp*' | egrep ^DSC | file-totalsize
     121MiB / 127MB  (127194089 bytes)  in 15 files
 ```
+
+TODO: report both apparent and disk usage.
 
 
 
