@@ -1,0 +1,155 @@
+#!/usr/bin/python
+
+import os
+import sys
+import time
+
+kilo = 1024
+mega = 1024*kilo
+giga = 1024*mega
+tera = 1024*giga
+peta = 1024*tera
+
+
+
+def kmg(bytes,kilo=1000, append='',thresh=15,rstrip0=1):
+    """ Readable size formatter
+        e.g. '%sB'%kmg(2342342324) = '2.3 GB'
+             kmg(3429873278462) == '3.1T'
+             kmg(342987327)     == '327M'
+             kmg(34298)         == '33K'
+        Decimal/SI kilos by default. Specify kilo=1024 if you want binary kilos.
+
+        Maybe use sfloat-like behaviour for the number?
+    """
+    ret=None
+    
+    mega=kilo*kilo
+    giga=mega*kilo
+    tera=giga*kilo
+    peta=tera*kilo
+    
+    if abs(bytes)>(0.80*peta):
+        showval = bytes/float(peta)
+        if showval<thresh: 
+            ret= "%.1f"%(showval,)
+        else:
+            ret= "%.0f"%(showval,)
+        append+='P'
+
+    elif abs(bytes)>(0.80*tera):
+        showval = bytes/float(tera)
+        if showval<thresh: 
+            ret= "%.1f"%(showval,)
+        else:
+            ret= "%.0f"%(showval,)
+        append+='T'
+
+    elif abs(bytes)>(0.95*giga):
+        showval = bytes/float(giga)
+        if showval<thresh: # e.g. 1.3GB but 15GB
+            ret= "%.1f"%(showval,)
+        else:
+            ret= "%.0f"%(showval,)
+        append+='G'
+            
+    elif abs(bytes)>(0.9*mega):
+        showval = bytes/float(mega)
+        if showval<thresh:
+            ret= "%.1f"%(showval,)
+        else:
+            ret= "%.0f"%(showval,)
+        append+='M'
+    
+    elif abs(bytes)>(0.85*kilo):
+        showval = bytes/float(kilo)
+        if showval<thresh:
+            ret= "%.1f"%(showval,)
+        else:
+            ret= "%.0f"%(showval,)
+        append+='K'
+    else:
+        ret= "%d"%(bytes,)
+    if rstrip0:
+        if '.' in ret:
+            ret=ret.rstrip('0').rstrip('.')                   
+    ret+=append
+        
+    return ret
+
+
+update_interval_sec = 0.2
+
+smallerthan = [
+   0,
+   kilo,
+   32 * kilo,
+   256 * kilo,
+   1 * mega,
+   128 * mega,
+   giga,
+   100 * giga,
+   tera,
+#   5.0*tera,
+]
+
+# counts [0] is for things sized smallerthan[0]..smallerthan[1], etc.
+counts = [0]*len(smallerthan)
+counts_larger = 0
+
+filecount = 0
+
+lastprint = time.time()
+
+
+def printsofar(path=None):
+    if path != None:
+        print "--- Update --- currently reading under %r"%path
+    for i in range(len(counts)-1):
+        print ' %7s .. %-7s:   %10d'%( kmg(smallerthan[i], kilo=1024)+'B',
+                                      kmg(smallerthan[i+1], kilo=1024)+'B',
+                                      counts[i])
+    if counts_larger > 0:
+        print "Larger than %-7s:   %10d"%(
+            kmg(smallerthan[-1], kilo=1024)+'B',
+            counts_larger,
+        )
+
+
+if len(sys.argv)==1:
+    sys.argv.append('.')
+            
+for path in sys.argv[1:]:
+    #print "Reading under %r"%path
+    for r,ds,fs in os.walk( path ):
+        for fn in fs:
+            ffn = os.path.join(r,fn)
+            try:
+                size = os.stat(ffn).st_size
+                filecount += 1
+                larger = True
+                for i in range(len(smallerthan)-1):
+                    if size >= smallerthan[i] and size < smallerthan[i+1]:
+                       counts[i] += 1
+                       larger = False
+                       break
+                if larger:
+                    counts_larger += 1
+
+                if filecount%1000:
+                    if time.time() - lastprint > update_interval_sec:
+                        lastprint = time.time()
+                        #if sc != None:
+                        #    print sc.clearscreen()
+                        printsofar( r )
+                
+            except (OSError,), e:
+                pass
+    
+print "-"*80
+#if sc != None:
+#    print sc.clearscreen()
+print "Final count: "
+printsofar()
+print
+print "Total file count: %d"%filecount

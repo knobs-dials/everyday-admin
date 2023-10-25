@@ -4,8 +4,10 @@ Sorted roughly in order of how much I seem to actually use them.
 
 Most are very dumb and singular, and that's often the point.
 
+There's a lot of "copy helpers into them" going on to make them independent scripts.
 
-In space cleanup, you may also find https://github.com/scarfboy/file-count and https://github.com/scarfboy/duppy useful
+
+In cleaning up storage, you may also find https://github.com/scarfboy/file-count and https://github.com/scarfboy/duppy useful
 
 
 
