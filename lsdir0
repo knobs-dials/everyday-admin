@@ -1,0 +1,12 @@
+#!/usr/bin/python3
+import os, sys
+
+for entry in os.listdir('.'):
+    if os.path.isdir(entry):
+        sys.stdout.write(entry)
+        if '0' in sys.argv[0]:
+            sys.stdout.write('\0')
+        else:
+            sys.stdout.write('\n')
+
+sys.stdout.flush

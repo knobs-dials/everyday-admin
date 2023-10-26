@@ -1,0 +1,2 @@
+#!/bin/bash
+locate "$@" | tr '\n' '\0';
