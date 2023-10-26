@@ -1,15 +1,12 @@
 #!/usr/bin/python3
-
 import os, sys, re 
 
-count_ascii       = 0
-count_nonascii    = 0
-count_validutf8   = 0
-count_invalidutf8 = 0
+count_ascii , count_nonascii, count_validutf8, count_invalidutf8  =  0, 0, 0, 0
 
-# in py3, the paths that come out are str/bytes following what you handed in, so we start forcig a bytes path from a str argv
+# in py3, the data type of paths that come out are str/bytes, following what you handed in,
+#    so it's easiest to start by forcing a bytes path from a str argv
 for dirname in sys.argv[1:]: 
-    for r, ds, fs in os.walk( bytes(dirname,'utf8') ):  # we assume that the starting point isn't broken. 
+    for r, ds, fs in os.walk( bytes(dirname,'utf8') ):  #  (assuming that the starting point isn't broken)
         for fn in fs:
             ffn = os.path.join(r, fn)
             match = re.search(br'([\x00-\x1f\x7f-\xff])',ffn)
