@@ -128,7 +128,8 @@ def nicetimelength(sec, long=False, joinon=' ', parts=2):
 
 def walk_and_print(paths, recursive, what,amount=None, future=True, dirs=False, timespec_sec=None, use_color=True, sort=False):
     results = []   # (time, line)
-    what_type = 'time' # or size 
+    what_type = 'time' # or size
+    now = time.time()
     try:
         for path in paths:
             for r, d, f in os.walk( path ):
@@ -140,19 +141,20 @@ def walk_and_print(paths, recursive, what,amount=None, future=True, dirs=False, 
                     del( d[:] ) # clear that array (see os.walk docs)                  
                 
                 for fn in f:
-                    ffn = os.path.join(r,fn)
+                    ffn = os.path.join(r, fn)
                     mode, inode, device, numhardlinks, uid,gid, size, atime, mtime, ctime = os.lstat(ffn)
-
+                    #print( datetime.datetime.fromtimestamp( mtime ) )
+                    
                     if what=='mtime':
-                        what_val = time.time() - mtime
+                        what_val = now - mtime
                     elif what=='atime':
-                        what_val = time.time() - atime
+                        what_val = now - atime
                     elif what=='ctime':
-                        what_val = time.time() - ctime
+                        what_val = now - ctime
                     elif what=='cmtime':
-                        what_val = time.time() - max(ctime,mtime)
+                        what_val = now - max(ctime,mtime)
                     elif what=='cmatime':
-                        what_val = time.time() - max(ctime,mtime,atime)
+                        what_val = now - max(ctime,mtime,atime)
                     elif what=='size':
                         what_val = size
                         what_type = 'size'
@@ -189,7 +191,7 @@ def walk_and_print(paths, recursive, what,amount=None, future=True, dirs=False, 
                                 
                                                                                                 
             if sort:
-                results.sort(key = lambda x:x[0])
+                results.sort(key = lambda x:x[0], reverse=True)
                 
                 if amount:
                     results = results[-int(amount):]
