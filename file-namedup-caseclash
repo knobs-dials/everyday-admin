@@ -1,10 +1,12 @@
 #!/usr/bin/python3
+
+# TODO: merge into file-namedup
+
 """ Checks under given directories 
     for file and directory entries that will be confusing to case-insensitive filesystem APIs (such as windows's)
 """
 
-import os
-import sys
+import os, sys
 
 args = sys.argv[1:]
 
