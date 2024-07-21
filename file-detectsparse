@@ -1,0 +1,94 @@
+#!/usr/bin/python3
+
+''' Try to figure out whether a file is sparese, and if so, report how much of it is used.
+
+    based on code at https://stackoverflow.com/questions/46100881/sparse-files-how-to-find-contents
+
+    Note that SEEK_END / SEEK_HOLE have a history and cannot be considered fully predictable
+    https://lwn.net/Articles/440255/
+'''
+
+
+import os
+import sys
+import errno
+import helpers_format
+import json
+
+SEEK_DATA = 3
+SEEK_HOLE = 4
+
+def get_ranges(fobj):
+    '''
+        For a possibly-sparse file, find the actually-allocated parts.
+        Returns:
+        - sum of used ranges
+        - list of (start, end) of allocated blocks
+    '''
+    fileno = fobj.fileno()
+    ranges = []
+    end = 0
+
+    sum_used = 0
+    while True:
+        try:
+            start = os.lseek( fileno, end,   SEEK_DATA)
+            end   = os.lseek( fileno, start, SEEK_HOLE)
+            ranges.append((start, end))
+            sum_used += end-start
+        except OSError as e:
+            if e.errno == errno.ENXIO: # for this operation, it effectively means 'done with file'?
+                return sum_used, ranges
+            raise
+
+def main():
+    for fn in sys.argv[1:]:
+        # various seeks are invalid for e.g. character files, so we already filter for regular fieles
+        if not os.path.isfile(fn):
+            continue
+
+        if not os.path.exists(fn):
+            continue
+        
+        #if os.path.islink(fn) and not os.path.exists(fn):
+        #    print( "SKIP, Broken symlink: %r"%fn )
+        #    continue
+        
+        #print("CHECKING ",fn)
+        try:
+            with open(fn, 'rb') as f:
+                try:
+                    fileno = f.fileno()
+                    os.lseek(fileno, 0, os.SEEK_END)
+                    filesize = f.tell() # mixing APIs, but it should be fine
+                    os.lseek(fileno, 0, os.SEEK_SET)
+                except OSError as e:  # hm? special file?
+                    #print( f'ERR1: {e} for {fn}' ) # skip for now, but TODO: figure out
+                    continue
+                
+                sum_used, ranges = get_ranges(f)
+                if filesize == 0:
+                    use_frac = 1
+                else:
+                    use_frac = sum_used / filesize
+
+                if use_frac == 1:
+                    continue
+                    
+                print( '%10dK used of %10dK (%3.0f%%)  for %r'%( sum_used/1024, filesize/1024,  100. * use_frac, fn ) )
+                
+                #for start, end in ranges:
+                #    print('[%d:%d]' % (start, end))
+                #    size = end-start
+                #    length = min(20, size)
+                ##    f.seek(start)
+                ##    data = f.read(length)
+                ##    print(data)
+        except OSError as e:
+            print( f'ERR2: {e} for {fn}' )
+            raise
+            #raise SystemExit(1)
+
+
+if __name__ == '__main__':
+    main()
