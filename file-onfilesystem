@@ -1,0 +1,27 @@
+#!/usr/bin/python3
+
+'''
+
+For a filename, figure out the filesystem it is on.
+
+'''
+import os, sys
+
+
+dd = {}
+with open('/etc/mtab') as mtab:
+    for line in mtab.readlines():
+        ll = line.split()
+        mount = ll[1]
+        dd[ os.stat( mount ).st_dev ] = (mount, ll[2])
+
+for fn in sys.argv[1:]:
+    stob = os.stat( fn )
+    #print( stob )
+    dev = stob.st_dev
+    if dev in dd:
+        mp, fstype = dd[dev]
+        print( "on %25s (%5s): %r"%(mp, fstype, fn) )
+    else:
+        print( "WARN: Did not find filesystem (via mtab) for device %s / file %r"%(fn, dev))
+    
