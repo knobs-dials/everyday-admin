@@ -1,0 +1,29 @@
+#!/usr/bin/python3
+
+import os
+
+ret = []                
+PATH = os.environ.get('PATH')
+for pathelem in sorted(set(PATH.split(':'))):
+    #print( "CHECKING IN %r"%pathelem )
+    if os.path.exists(pathelem):
+        for fn in os.listdir(pathelem):
+            ffn = os.path.join( pathelem, fn )
+            #print( "CHECKING", ffn )
+            #stob = os.stat(fn)
+            #mode = stob.st_mode
+            #print(mode)
+
+            if (#not os.path.isdir( ffn ) and
+                os.access( ffn, os.X_OK )
+            ):
+                ret.append( fn )
+                #print( fn )
+
+for elec in sorted( ret ):
+    print( elec )
+
+##!/bin/bash
+#for p in $(echo "$PATH" | sed 's/:/ /g'); do 
+#  find $p -maxdepth 1 -perm /ugo+x -print0 | xargs -0 -n 1 basename
+#done
